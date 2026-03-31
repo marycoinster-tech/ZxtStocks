@@ -6,6 +6,14 @@ export interface User {
   createdAt: string;
 }
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  fullName: string;
+  referralCode: string;
+  createdAt: string;
+}
+
 export interface MiningSession {
   id: string;
   userId: string;

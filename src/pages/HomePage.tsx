@@ -5,13 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { TrendingUp, Zap, Users, Shield, CheckCircle2, ArrowRight } from 'lucide-react';
 import { MINING_PLANS } from '@/constants/plans';
 import { formatCurrency } from '@/lib/utils';
-import { storage } from '@/lib/storage';
+import { useAuth } from '@/contexts/AuthContext';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const user = storage.getUser();
+  const { user } = useAuth();
 
   useEffect(() => {
     if (user) {

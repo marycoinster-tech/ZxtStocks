@@ -1,122 +1,186 @@
-import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Menu, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { storage } from '@/lib/storage';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Cpu, Menu, X, User, LogOut } from 'lucide-react';
 import { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { authService } from '@/lib/auth-service';
+import { toast } from 'sonner';
 
 export default function Navbar() {
-  const location = useLocation();
-  const user = storage.getUser();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const { user, logout } = useAuth();
 
-  const navItems = user
-    ? [
-        { path: '/dashboard', label: 'Dashboard' },
-        { path: '/transactions', label: 'Transactions' },
-        { path: '/referrals', label: 'Referrals' },
-        { path: '/plans', label: 'Upgrade' },
-      ]
-    : [];
+  const handleLogout = async () => {
+    try {
+      await authService.signOut();
+      logout();
+      toast.success('Logged out successfully');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to logout');
+    }
+  };
 
   return (
-    <nav className="border-b border-border bg-card/50 backdrop-blur-lg sticky top-0 z-50">
+    <nav className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="w-10 h-10 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Wallet className="w-6 h-6 text-white" />
+          <Link to="/" className="flex items-center gap-2">
+            <div className="w-10 h-10 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center">
+              <Cpu className="w-6 h-6 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-              Zxt Stocks
-            </span>
+            <span className="font-bold text-xl">Zxt Stocks</span>
           </Link>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-8">
-            {navItems.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`text-sm font-medium transition-colors hover:text-primary ${
-                  location.pathname === item.path
-                    ? 'text-primary'
-                    : 'text-muted-foreground'
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
+            <Link to="/" className="text-sm font-medium hover:text-primary transition-colors">
+              Home
+            </Link>
+            {user && (
+              <>
+                <Link to="/dashboard" className="text-sm font-medium hover:text-primary transition-colors">
+                  Dashboard
+                </Link>
+                <Link to="/referrals" className="text-sm font-medium hover:text-primary transition-colors">
+                  Referrals
+                </Link>
+              </>
+            )}
+            <Link to="/plans" className="text-sm font-medium hover:text-primary transition-colors">
+              Plans
+            </Link>
           </div>
 
-          {/* Desktop CTA */}
-          <div className="hidden md:block">
+          {/* Desktop Auth */}
+          <div className="hidden md:flex items-center gap-4">
             {user ? (
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">
-                  {user.email}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    storage.clearUser();
-                    window.location.href = '/';
-                  }}
-                >
-                  Logout
-                </Button>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <User className="w-4 h-4 mr-2" />
+                    {user.fullName}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium">{user.fullName}</p>
+                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/dashboard">Dashboard</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/transactions">Transactions</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/referrals">Referrals</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout} className="text-destructive">
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
-              <Button asChild>
-                <Link to="/#pricing">Get Started</Link>
-              </Button>
+              <>
+                <Button variant="ghost" asChild>
+                  <Link to="/login">Sign In</Link>
+                </Button>
+                <Button asChild>
+                  <Link to="/signup">Get Started</Link>
+                </Button>
+              </>
             )}
           </div>
 
           {/* Mobile Menu Button */}
-          <button
-            className="md:hidden p-2"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? (
-              <X className="w-6 h-6" />
-            ) : (
-              <Menu className="w-6 h-6" />
-            )}
+          <button className="md:hidden p-2" onClick={() => setIsOpen(!isOpen)}>
+            {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
 
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
+        {/* Mobile Navigation */}
+        {isOpen && (
           <div className="md:hidden py-4 border-t border-border">
-            {navItems.map((item) => (
+            <div className="flex flex-col gap-4">
               <Link
-                key={item.path}
-                to={item.path}
-                className={`block py-2 text-sm font-medium ${
-                  location.pathname === item.path
-                    ? 'text-primary'
-                    : 'text-muted-foreground'
-                }`}
-                onClick={() => setMobileMenuOpen(false)}
+                to="/"
+                className="text-sm font-medium hover:text-primary transition-colors"
+                onClick={() => setIsOpen(false)}
               >
-                {item.label}
+                Home
               </Link>
-            ))}
-            {user && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full mt-4"
-                onClick={() => {
-                  storage.clearUser();
-                  window.location.href = '/';
-                }}
+              {user && (
+                <>
+                  <Link
+                    to="/dashboard"
+                    className="text-sm font-medium hover:text-primary transition-colors"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    Dashboard
+                  </Link>
+                  <Link
+                    to="/transactions"
+                    className="text-sm font-medium hover:text-primary transition-colors"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    Transactions
+                  </Link>
+                  <Link
+                    to="/referrals"
+                    className="text-sm font-medium hover:text-primary transition-colors"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    Referrals
+                  </Link>
+                </>
+              )}
+              <Link
+                to="/plans"
+                className="text-sm font-medium hover:text-primary transition-colors"
+                onClick={() => setIsOpen(false)}
               >
-                Logout
-              </Button>
-            )}
+                Plans
+              </Link>
+              {user ? (
+                <>
+                  <div className="pt-2 border-t border-border">
+                    <p className="text-sm font-medium mb-1">{user.fullName}</p>
+                    <p className="text-xs text-muted-foreground mb-3">{user.email}</p>
+                  </div>
+                  <Button variant="destructive" className="w-full" onClick={handleLogout}>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Logout
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" className="w-full" asChild>
+                    <Link to="/login" onClick={() => setIsOpen(false)}>
+                      Sign In
+                    </Link>
+                  </Button>
+                  <Button className="w-full" asChild>
+                    <Link to="/signup" onClick={() => setIsOpen(false)}>
+                      Get Started
+                    </Link>
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>
