@@ -58,3 +58,49 @@ export interface PaystackResponse {
 export function isPaymentSuccessful(response: PaystackResponse): boolean {
   return response.status === 'success';
 }
+
+// Extend Window interface to include PaystackPop
+declare global {
+  interface Window {
+    PaystackPop: {
+      setup: (config: {
+        key: string;
+        email: string;
+        amount: number;
+        ref: string;
+        metadata?: any;
+        callback: (response: PaystackResponse) => void;
+        onClose: () => void;
+      }) => {
+        openIframe: () => void;
+      };
+    };
+  }
+}
+
+/**
+ * Initialize Paystack payment using Popup JS
+ */
+export function initializePaystackPayment(config: PaystackConfig): void {
+  if (!validatePaystackKey()) {
+    return;
+  }
+
+  if (typeof window.PaystackPop === 'undefined') {
+    toast.error('Paystack library not loaded. Please refresh the page.');
+    console.error('PaystackPop is not defined. Make sure the Paystack script is loaded.');
+    return;
+  }
+
+  const handler = window.PaystackPop.setup({
+    key: config.publicKey,
+    email: config.email,
+    amount: config.amount,
+    ref: config.reference || generatePaymentReference(),
+    metadata: config.metadata,
+    callback: config.onSuccess,
+    onClose: config.onClose,
+  });
+
+  handler.openIframe();
+}

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PaystackButton } from 'react-paystack';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +19,7 @@ import {
   convertToKobo,
   PaystackResponse,
   isPaymentSuccessful,
+  initializePaystackPayment,
 } from '@/lib/paystack';
 
 export default function PlansPage() {
@@ -27,33 +27,14 @@ export default function PlansPage() {
   const [selectedPlan, setSelectedPlan] = useState(MINING_PLANS[0].id);
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
-  const [isReady, setIsReady] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const currentPlan = MINING_PLANS.find((p) => p.id === selectedPlan) || MINING_PLANS[0];
   const hasValidKey = PAYSTACK_PUBLIC_KEY && PAYSTACK_PUBLIC_KEY !== '';
 
-  const handleContinue = () => {
-    if (!email || !fullName) {
-      toast.error('Please fill in all fields');
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      toast.error('Please enter a valid email address');
-      return;
-    }
-
-    if (!validatePaystackKey()) {
-      return;
-    }
-
-    setIsReady(true);
-    toast.success('Ready to proceed! Click "Pay with Paystack" below');
-  };
-
   const handlePaymentSuccess = (response: PaystackResponse) => {
     console.log('Payment successful:', response);
+    setIsProcessing(false);
 
     if (!isPaymentSuccessful(response)) {
       toast.error('Payment verification failed. Please contact support.');
@@ -107,22 +88,41 @@ export default function PlansPage() {
   };
 
   const handlePaymentClose = () => {
+    setIsProcessing(false);
     toast.info('Payment cancelled');
   };
 
-  const paystackConfig = {
-    reference: generatePaymentReference(),
-    email,
-    amount: convertToKobo(currentPlan.price),
-    publicKey: PAYSTACK_PUBLIC_KEY,
-    text: 'Pay with Paystack',
-    metadata: {
-      fullName,
-      planId: currentPlan.id,
-      planName: currentPlan.name,
-    },
-    onSuccess: handlePaymentSuccess,
-    onClose: handlePaymentClose,
+  const handlePayNow = () => {
+    if (!email || !fullName) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
+    if (!validatePaystackKey()) {
+      return;
+    }
+
+    setIsProcessing(true);
+
+    initializePaystackPayment({
+      email,
+      amount: convertToKobo(currentPlan.price),
+      publicKey: PAYSTACK_PUBLIC_KEY,
+      reference: generatePaymentReference(),
+      metadata: {
+        fullName,
+        planId: currentPlan.id,
+        planName: currentPlan.name,
+      },
+      onSuccess: handlePaymentSuccess,
+      onClose: handlePaymentClose,
+    });
   };
 
   return (
@@ -226,7 +226,7 @@ export default function PlansPage() {
                       placeholder="John Doe"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      disabled={isReady}
+                      disabled={isProcessing}
                     />
                   </div>
                   <div className="space-y-2">
@@ -237,18 +237,9 @@ export default function PlansPage() {
                       placeholder="john@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      disabled={isReady}
+                      disabled={isProcessing}
                     />
                   </div>
-
-                  {isReady && (
-                    <Alert>
-                      <CheckCircle2 className="h-4 w-4" />
-                      <AlertDescription>
-                        Details confirmed! Click the button below to complete payment.
-                      </AlertDescription>
-                    </Alert>
-                  )}
 
                   <div className="border-t border-border pt-4 space-y-2">
                     <div className="flex justify-between text-sm">
@@ -272,31 +263,14 @@ export default function PlansPage() {
                   </div>
                 </CardContent>
                 <CardFooter className="flex-col gap-2">
-                  {!isReady ? (
-                    <Button
-                      className="w-full"
-                      size="lg"
-                      onClick={handleContinue}
-                      disabled={!hasValidKey}
-                    >
-                      Continue to Payment
-                    </Button>
-                  ) : (
-                    <>
-                      <PaystackButton
-                        {...paystackConfig}
-                        className="w-full h-11 px-8 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md font-medium transition-colors"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => setIsReady(false)}
-                      >
-                        Edit Details
-                      </Button>
-                    </>
-                  )}
+                  <Button
+                    className="w-full"
+                    size="lg"
+                    onClick={handlePayNow}
+                    disabled={!hasValidKey || isProcessing}
+                  >
+                    {isProcessing ? 'Processing...' : 'Pay with Paystack'}
+                  </Button>
                   
                   {!hasValidKey && (
                     <p className="text-xs text-muted-foreground text-center">
