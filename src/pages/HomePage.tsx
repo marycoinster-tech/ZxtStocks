@@ -74,8 +74,8 @@ export default function HomePage() {
                   <ArrowRight className="ml-2 w-5 h-5" />
                 </a>
               </Button>
-              <Button size="lg" variant="outline" className="px-8 py-6 text-lg">
-                Learn More
+              <Button size="lg" variant="outline" className="px-8 py-6 text-lg" asChild>
+                <Link to="/how-it-works">Learn More</Link>
               </Button>
             </div>
 

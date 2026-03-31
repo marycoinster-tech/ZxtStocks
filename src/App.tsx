@@ -7,6 +7,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import TransactionsPage from '@/pages/TransactionsPage';
 import ReferralsPage from '@/pages/ReferralsPage';
 import PlansPage from '@/pages/PlansPage';
+import HowItWorksPage from '@/pages/HowItWorksPage';
 import NotFound from '@/pages/NotFound';
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
             <Route path="/transactions" element={<TransactionsPage />} />
             <Route path="/referrals" element={<ReferralsPage />} />
             <Route path="/plans" element={<PlansPage />} />
+            <Route path="/how-it-works" element={<HowItWorksPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
