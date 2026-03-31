@@ -1,0 +1,56 @@
+import { MiningPlan } from '@/types';
+
+export const MINING_PLANS: MiningPlan[] = [
+  {
+    id: 'starter',
+    name: 'Starter Plan',
+    price: 3500,
+    duration: 30,
+    hashRate: 10,
+    dailyReturn: 200,
+    totalReturn: 6000,
+    features: [
+      '10 TH/s Mining Power',
+      '₦200 Daily Returns',
+      '30 Days Duration',
+      'Basic Support',
+      'Withdrawal Anytime',
+    ],
+  },
+  {
+    id: 'professional',
+    name: 'Professional Plan',
+    price: 10000,
+    duration: 60,
+    hashRate: 35,
+    dailyReturn: 650,
+    totalReturn: 39000,
+    features: [
+      '35 TH/s Mining Power',
+      '₦650 Daily Returns',
+      '60 Days Duration',
+      'Priority Support',
+      'Instant Withdrawals',
+      'Referral Bonus 15%',
+    ],
+    popular: true,
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise Plan',
+    price: 25000,
+    duration: 90,
+    hashRate: 100,
+    dailyReturn: 1800,
+    totalReturn: 162000,
+    features: [
+      '100 TH/s Mining Power',
+      '₦1,800 Daily Returns',
+      '90 Days Duration',
+      'VIP Support 24/7',
+      'Instant Withdrawals',
+      'Referral Bonus 20%',
+      'Free Plan Upgrade',
+    ],
+  },
+];
