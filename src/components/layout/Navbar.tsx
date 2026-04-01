@@ -50,6 +50,9 @@ export default function Navbar() {
                 <Link to="/dashboard" className="text-sm font-medium hover:text-primary transition-colors">
                   Dashboard
                 </Link>
+                <Link to="/withdraw" className="text-sm font-medium hover:text-primary transition-colors">
+                  Withdraw
+                </Link>
                 <Link to="/referrals" className="text-sm font-medium hover:text-primary transition-colors">
                   Referrals
                 </Link>
@@ -83,6 +86,9 @@ export default function Navbar() {
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/transactions">Transactions</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/withdraw">Withdraw</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/referrals">Referrals</Link>
@@ -138,6 +144,13 @@ export default function Navbar() {
                     onClick={() => setIsOpen(false)}
                   >
                     Transactions
+                  </Link>
+                  <Link
+                    to="/withdraw"
+                    className="text-sm font-medium hover:text-primary transition-colors"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    Withdraw
                   </Link>
                   <Link
                     to="/referrals"

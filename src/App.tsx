@@ -12,6 +12,7 @@ import TransactionsPage from '@/pages/TransactionsPage';
 import ReferralsPage from '@/pages/ReferralsPage';
 import PlansPage from '@/pages/PlansPage';
 import HowItWorksPage from '@/pages/HowItWorksPage';
+import WithdrawalPage from '@/pages/WithdrawalPage';
 import NotFound from '@/pages/NotFound';
 
 function App() {
@@ -40,6 +41,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <TransactionsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/withdraw"
+                element={
+                  <ProtectedRoute>
+                    <WithdrawalPage />
                   </ProtectedRoute>
                 }
               />
