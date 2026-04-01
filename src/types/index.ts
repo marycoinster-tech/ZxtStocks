@@ -42,10 +42,11 @@ export interface MiningPlan {
   id: string;
   name: string;
   price: number;
-  duration: number; // days
+  duration: number; // days (always 30)
   hashRate: number; // TH/s
   dailyReturn: number; // NGN
   totalReturn: number; // NGN
+  monthlyTasks: number; // tasks per month
   features: string[];
   popular?: boolean;
 }

@@ -88,7 +88,7 @@ export default function DashboardPage() {
       icon: Clock,
       color: 'text-info',
       bgColor: 'bg-info/10',
-      change: `of ${plan.duration} days`,
+      change: 'of 30 days',
     },
   ];
 

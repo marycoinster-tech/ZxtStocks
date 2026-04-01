@@ -171,7 +171,7 @@ export default function PlansPage() {
                     <div className="flex items-start justify-between">
                       <div>
                         <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                        <CardDescription>{plan.duration} Days Mining</CardDescription>
+                        <CardDescription>30 Days Mining · {plan.monthlyTasks} Tasks/Month</CardDescription>
                       </div>
                       <div className="text-right">
                         <div className="text-3xl font-bold text-primary">
@@ -248,7 +248,11 @@ export default function PlansPage() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Duration</span>
-                      <span className="font-medium">{currentPlan.duration} Days</span>
+                      <span className="font-medium">30 Days</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Monthly Tasks</span>
+                      <span className="font-medium">{currentPlan.monthlyTasks} tasks</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Daily Return</span>

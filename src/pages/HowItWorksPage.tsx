@@ -22,7 +22,7 @@ export default function HowItWorksPage() {
       icon: Wallet,
       title: 'Choose Your Plan',
       description: 'Select a mining plan that fits your budget. Plans start from ₦3,500 with different mining durations and hash rates.',
-      details: ['Starter: ₦3,500 (30 days)', 'Professional: ₦10,000 (60 days)', 'Enterprise: ₦25,000 (90 days)']
+      details: ['Starter: ₦3,500 — ₦500/day + 10 tasks/month', 'Professional: ₦10,000 — ₦1,500/day + 30 tasks/month', 'Elite: ₦25,000 — ₦4,000/day + 60 tasks/month', 'Enterprise: ₦50,000 — ₦10,000/day + 100 tasks/month']
     },
     {
       number: '02',
@@ -94,7 +94,7 @@ export default function HowItWorksPage() {
     },
     {
       question: 'How do I earn money?',
-      answer: 'You purchase a mining plan, and our equipment mines cryptocurrency on your behalf 24/7. Daily profits are calculated based on your plan\'s hash rate and current market conditions. You can withdraw your earnings anytime to your bank account or crypto wallet.'
+      answer: 'You purchase a mining plan, and our equipment mines cryptocurrency on your behalf 24/7 for 30 days. Daily returns are fixed per plan — ₦500/day on Starter up to ₦10,000/day on Enterprise. You also get monthly task bonuses to boost earnings. Withdraw your balance anytime directly to your Nigerian bank account.'
     },
     {
       question: 'Is it safe?',
@@ -151,9 +151,7 @@ export default function HowItWorksPage() {
             <div className="bg-primary/10 p-6 rounded-lg border border-primary/20">
               <p className="font-semibold text-primary mb-2">Think of it like this:</p>
               <p>
-                Instead of buying your own taxi (₦5M+), you invest ₦3,500 to rent a professional driver and car 
-                that works for you daily, generating returns while you focus on other things. That's exactly how 
-                cloud mining works!
+                Instead of buying your own taxi (₦5M+), you invest as little as ₦3,500 to rent professional mining power that earns you ₦500 every single day for 30 days — that's ₦15,000 total return from a ₦3,500 investment. Higher plans earn even more daily. That's exactly how cloud mining works!
               </p>
             </div>
           </CardContent>
