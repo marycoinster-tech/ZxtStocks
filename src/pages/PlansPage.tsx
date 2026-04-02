@@ -12,6 +12,9 @@ import { formatCurrency, generateReferralCode } from '@/lib/utils';
 import { storage } from '@/lib/storage';
 import { toast } from 'sonner';
 import { MiningSession, Transaction, User } from '@/types';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import {
   PAYSTACK_PUBLIC_KEY,
   validatePaystackKey,
@@ -22,8 +25,24 @@ import {
   initializePaystackPayment,
 } from '@/lib/paystack';
 
+async function callEdgeFunction(action: string, payload?: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke('paystack-transfer', {
+    body: { action, ...payload },
+  });
+  if (error) {
+    let msg = error.message;
+    if (error instanceof FunctionsHttpError) {
+      try { msg = await error.context?.text() || msg; } catch { /* ignore */ }
+    }
+    console.error('Edge function error:', msg);
+    // Non-fatal — don't block the user from accessing dashboard
+  }
+  return data;
+}
+
 export default function PlansPage() {
   const navigate = useNavigate();
+  const { user: authUser } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState(MINING_PLANS[0].id);
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
@@ -32,33 +51,36 @@ export default function PlansPage() {
   const currentPlan = MINING_PLANS.find((p) => p.id === selectedPlan) || MINING_PLANS[0];
   const hasValidKey = PAYSTACK_PUBLIC_KEY && PAYSTACK_PUBLIC_KEY !== '';
 
-  const handlePaymentSuccess = (response: PaystackResponse) => {
+  const handlePaymentSuccess = async (response: PaystackResponse) => {
     console.log('Payment successful:', response);
-    setIsProcessing(false);
 
     if (!isPaymentSuccessful(response)) {
+      setIsProcessing(false);
       toast.error('Payment verification failed. Please contact support.');
       return;
     }
 
-    // Create user
-    const user: User = {
-      id: Date.now().toString(),
-      email,
-      fullName,
-      referralCode: generateReferralCode(),
+    // Determine user id — prefer authenticated user, fall back to localStorage
+    const userId = authUser?.id;
+    const userEmail = authUser?.email || email;
+
+    // Create / update localStorage user & session (for dashboard progress display)
+    const localUser: User = {
+      id: userId || Date.now().toString(),
+      email: userEmail,
+      fullName: authUser?.fullName || fullName,
+      referralCode: authUser?.referralCode || generateReferralCode(),
       createdAt: new Date().toISOString(),
     };
-    storage.setUser(user);
+    storage.setUser(localUser);
 
-    // Create mining session
     const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + currentPlan.duration);
 
     const session: MiningSession = {
       id: Date.now().toString(),
-      userId: user.id,
+      userId: localUser.id,
       planId: currentPlan.id,
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
@@ -69,10 +91,9 @@ export default function PlansPage() {
     };
     storage.setMiningSession(session);
 
-    // Add payment transaction
     const transaction: Transaction = {
       id: Date.now().toString(),
-      userId: user.id,
+      userId: localUser.id,
       type: 'payment',
       amount: currentPlan.price,
       currency: 'NGN',
@@ -83,6 +104,18 @@ export default function PlansPage() {
     };
     storage.addTransaction(transaction);
 
+    // Sync to Supabase if user is authenticated
+    if (userId) {
+      console.log('Syncing plan activation to Supabase for user:', userId);
+      await callEdgeFunction('activate_plan', {
+        user_id: userId,
+        plan_id: currentPlan.id,
+        plan_name: currentPlan.name,
+        referred_email: userEmail,
+      });
+    }
+
+    setIsProcessing(false);
     toast.success('Payment successful! Your mining has started.');
     navigate('/dashboard');
   };

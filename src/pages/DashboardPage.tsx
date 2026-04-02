@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { TrendingUp, Wallet, Zap, Users, ArrowUpRight, Clock, CheckCircle2, ListChecks, Loader2, Lock } from 'lucide-react';
+import { TrendingUp, Wallet, Zap, Users, ArrowUpRight, CheckCircle2, ListChecks, Loader2, Lock } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { formatCurrency, calculateMiningProgress, getDaysRemaining } from '@/lib/utils';
 import { MINING_PLANS } from '@/constants/plans';
@@ -125,6 +125,14 @@ export default function DashboardPage() {
   const [claimingTask, setClaimingTask] = useState<string | null>(null);
   const [loadingTasks, setLoadingTasks] = useState(true);
 
+  // Real DB balance state
+  const [dbBalance, setDbBalance] = useState<{
+    available_balance: number;
+    total_earned: number;
+    total_withdrawn: number;
+  } | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(true);
+
   useEffect(() => {
     if (!user && !authUser) {
       navigate('/plans');
@@ -147,6 +155,21 @@ export default function DashboardPage() {
       }
     }
   }, [user, authUser, session, navigate]);
+
+  // Fetch real mining balance from Supabase
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!authUser) { setLoadingBalance(false); return; }
+      const { data, error } = await supabase
+        .from('mining_balances')
+        .select('available_balance, total_earned, total_withdrawn')
+        .eq('user_id', authUser.id)
+        .maybeSingle();
+      if (!error && data) setDbBalance(data);
+      setLoadingBalance(false);
+    };
+    fetchBalance();
+  }, [authUser]);
 
   // Load completed tasks from DB
   useEffect(() => {
@@ -198,38 +221,44 @@ export default function DashboardPage() {
   const completedCount = visibleTasks.filter((t) => completedTasks.includes(t.key)).length;
   const taskProgress = taskQuota > 0 ? (completedCount / taskQuota) * 100 : 0;
 
+  // ── BALANCE DISPLAY: prefer real DB balance, fall back to localStorage mining progress ──
+  // DB available balance (withdrawable earnings + task bonuses + referral bonuses)
+  const liveAvailableBalance = dbBalance?.available_balance ?? 0;
+  const liveTotalEarned = dbBalance?.total_earned ?? 0;
+  const liveTotalWithdrawn = dbBalance?.total_withdrawn ?? 0;
+
   const stats = [
     {
-      title: 'Total Mined',
-      value: plan ? formatCurrency(currentMined) : '₦0.00',
+      title: 'Total Earned',
+      value: loadingBalance ? '...' : formatCurrency(liveTotalEarned),
       icon: Wallet,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
-      change: plan ? `+${formatCurrency(todayEarned)} today` : 'No active plan',
+      change: loadingBalance ? 'Loading...' : (plan ? `+${formatCurrency(plan.dailyReturn)}/day` : 'Purchase a plan'),
     },
     {
-      title: 'Mining Power',
-      value: plan ? `${plan.hashRate} TH/s` : '— TH/s',
-      icon: Zap,
+      title: 'Available Balance',
+      value: loadingBalance ? '...' : formatCurrency(liveAvailableBalance),
+      icon: TrendingUp,
       color: 'text-secondary',
       bgColor: 'bg-secondary/10',
-      change: plan ? 'Active' : 'Inactive',
+      change: loadingBalance ? 'Loading...' : (plan ? 'Withdrawable now' : 'No active plan'),
     },
     {
-      title: 'Referral Bonus',
-      value: formatCurrency(totalReferralBonus),
+      title: 'Total Withdrawn',
+      value: loadingBalance ? '...' : formatCurrency(liveTotalWithdrawn),
       icon: Users,
       color: 'text-accent',
       bgColor: 'bg-accent/10',
-      change: `${referrals.length} referrals`,
+      change: 'All time payouts',
     },
     {
-      title: 'Days Remaining',
-      value: plan ? daysRemaining.toString() : '—',
-      icon: Clock,
+      title: 'Mining Hash Rate',
+      value: plan ? `${plan.hashRate} TH/s` : '— TH/s',
+      icon: Zap,
       color: 'text-info',
       bgColor: 'bg-info/10',
-      change: 'of 30 days',
+      change: plan ? `${daysRemaining} days remaining` : '—',
     },
   ];
 

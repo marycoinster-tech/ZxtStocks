@@ -50,6 +50,119 @@ serve(async (req: Request) => {
 
     console.log('paystack-transfer called with action:', action);
 
+    // ── Activate Plan (called after successful Paystack payment) ────────────
+    if (action === 'activate_plan') {
+      const { user_id, plan_id, plan_name, referred_email } = body;
+
+      if (!user_id || !plan_id) {
+        return new Response(
+          JSON.stringify({ error: 'user_id and plan_id are required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log(`Activating plan ${plan_id} for user ${user_id}`);
+
+      // Upsert mining_balances row — create if first time, leave balance intact if upgrading
+      const { data: existingBalance } = await supabaseAdmin
+        .from('mining_balances')
+        .select('id, available_balance, total_earned, total_withdrawn')
+        .eq('user_id', user_id)
+        .maybeSingle();
+
+      if (!existingBalance) {
+        const { error: insertErr } = await supabaseAdmin
+          .from('mining_balances')
+          .insert({
+            user_id,
+            available_balance: 0,
+            total_earned: 0,
+            total_withdrawn: 0,
+          });
+        if (insertErr) {
+          console.error('Failed to create mining_balances:', insertErr);
+          throw new Error('Failed to initialise mining balance');
+        }
+      }
+
+      // Credit referral bonus for the referrer (inline — same logic as credit_referral)
+      const { data: referredProfile } = await supabaseAdmin
+        .from('user_profiles')
+        .select('referred_by, email')
+        .eq('id', user_id)
+        .maybeSingle();
+
+      let referralCredited = false;
+      if (referredProfile?.referred_by) {
+        const { data: referrerProfile } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, email')
+          .eq('referral_code', referredProfile.referred_by)
+          .maybeSingle();
+
+        if (referrerProfile) {
+          const bonusAmount = REFERRAL_BONUSES[plan_id] ?? 500;
+          const referrerId = referrerProfile.id;
+
+          // Avoid duplicate crediting
+          const { data: existingBonus } = await supabaseAdmin
+            .from('referral_bonuses')
+            .select('id')
+            .eq('referrer_id', referrerId)
+            .eq('referred_user_id', user_id)
+            .eq('plan_id', plan_id)
+            .maybeSingle();
+
+          if (!existingBonus) {
+            await supabaseAdmin.from('referral_bonuses').insert({
+              referrer_id: referrerId,
+              referred_user_id: user_id,
+              referred_email: referred_email || referredProfile.email || '',
+              plan_id,
+              plan_name: plan_name || plan_id,
+              bonus_amount: bonusAmount,
+              status: 'active',
+            });
+
+            // Credit referrer's balance
+            const { data: refBalance } = await supabaseAdmin
+              .from('mining_balances')
+              .select('available_balance, total_earned, total_withdrawn')
+              .eq('user_id', referrerId)
+              .maybeSingle();
+
+            if (refBalance) {
+              await supabaseAdmin
+                .from('mining_balances')
+                .update({
+                  available_balance: refBalance.available_balance + bonusAmount,
+                  total_earned: refBalance.total_earned + bonusAmount,
+                })
+                .eq('user_id', referrerId);
+            } else {
+              await supabaseAdmin.from('mining_balances').insert({
+                user_id: referrerId,
+                available_balance: bonusAmount,
+                total_earned: bonusAmount,
+                total_withdrawn: 0,
+              });
+            }
+
+            referralCredited = true;
+            console.log(`Referral bonus ₦${bonusAmount} credited to ${referrerProfile.email}`);
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          message: 'Plan activated successfully',
+          referral_credited: referralCredited,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // ── List Banks ───────────────────────────────────────────────────────────
     if (action === 'list_banks') {
       const banks = await paystackRequest('GET', '/bank?country=nigeria&perPage=100');
