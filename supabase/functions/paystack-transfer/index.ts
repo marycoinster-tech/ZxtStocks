@@ -5,6 +5,14 @@ import { corsHeaders } from '../_shared/cors.ts';
 const PAYSTACK_SECRET_KEY = Deno.env.get('PAYSTACK_SECRET_KEY') ?? '';
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 
+// Referral bonus amounts per plan
+const REFERRAL_BONUSES: Record<string, number> = {
+  starter: 500,
+  professional: 1500,
+  elite: 3000,
+  enterprise: 5000,
+};
+
 async function paystackRequest(method: string, path: string, body?: Record<string, unknown>) {
   const response = await fetch(`${PAYSTACK_BASE_URL}${path}`, {
     method,
@@ -73,6 +81,197 @@ serve(async (req: Request) => {
       );
     }
 
+    // ── Credit Referral Bonus ────────────────────────────────────────────────
+    // Called after a successful payment to credit the referrer
+    if (action === 'credit_referral') {
+      const { referred_user_id, referred_email, plan_id, plan_name } = body;
+
+      if (!referred_user_id || !plan_id) {
+        return new Response(
+          JSON.stringify({ error: 'referred_user_id and plan_id are required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Get the referred user's profile to find their referred_by code
+      const { data: referredProfile, error: profileError } = await supabaseAdmin
+        .from('user_profiles')
+        .select('referred_by, email')
+        .eq('id', referred_user_id)
+        .maybeSingle();
+
+      if (profileError || !referredProfile?.referred_by) {
+        console.log('No referral code found for user:', referred_user_id);
+        return new Response(
+          JSON.stringify({ message: 'No referral to credit' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Find the referrer by their referral_code
+      const { data: referrerProfile, error: referrerError } = await supabaseAdmin
+        .from('user_profiles')
+        .select('id, email')
+        .eq('referral_code', referredProfile.referred_by)
+        .maybeSingle();
+
+      if (referrerError || !referrerProfile) {
+        console.log('Referrer not found for code:', referredProfile.referred_by);
+        return new Response(
+          JSON.stringify({ message: 'Referrer not found' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const bonusAmount = REFERRAL_BONUSES[plan_id] ?? 500;
+      const referrerId = referrerProfile.id;
+
+      console.log(`Crediting ₦${bonusAmount} referral bonus to user ${referrerId}`);
+
+      // Check if referral bonus already credited for this pair + plan
+      const { data: existingBonus } = await supabaseAdmin
+        .from('referral_bonuses')
+        .select('id')
+        .eq('referrer_id', referrerId)
+        .eq('referred_user_id', referred_user_id)
+        .eq('plan_id', plan_id)
+        .maybeSingle();
+
+      if (existingBonus) {
+        return new Response(
+          JSON.stringify({ message: 'Referral bonus already credited' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Insert referral bonus record
+      const { error: bonusInsertError } = await supabaseAdmin
+        .from('referral_bonuses')
+        .insert({
+          referrer_id: referrerId,
+          referred_user_id,
+          referred_email,
+          plan_id,
+          plan_name,
+          bonus_amount: bonusAmount,
+          status: 'active',
+        });
+
+      if (bonusInsertError) {
+        console.error('Failed to insert referral bonus:', bonusInsertError);
+        throw new Error('Failed to record referral bonus');
+      }
+
+      // Upsert referrer's mining balance — add bonus to available_balance & total_earned
+      const { data: existingBalance } = await supabaseAdmin
+        .from('mining_balances')
+        .select('available_balance, total_earned, total_withdrawn')
+        .eq('user_id', referrerId)
+        .maybeSingle();
+
+      if (existingBalance) {
+        await supabaseAdmin
+          .from('mining_balances')
+          .update({
+            available_balance: existingBalance.available_balance + bonusAmount,
+            total_earned: existingBalance.total_earned + bonusAmount,
+          })
+          .eq('user_id', referrerId);
+      } else {
+        await supabaseAdmin
+          .from('mining_balances')
+          .insert({
+            user_id: referrerId,
+            available_balance: bonusAmount,
+            total_earned: bonusAmount,
+            total_withdrawn: 0,
+          });
+      }
+
+      console.log(`Referral bonus of ₦${bonusAmount} credited to ${referrerProfile.email}`);
+
+      return new Response(
+        JSON.stringify({ message: 'Referral bonus credited', bonus_amount: bonusAmount }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ── Complete Task ─────────────────────────────────────────────────────────
+    if (action === 'complete_task') {
+      const { user_id, task_key, task_title, task_description, bonus_amount } = body;
+
+      if (!user_id || !task_key) {
+        return new Response(
+          JSON.stringify({ error: 'user_id and task_key are required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Check if task already completed
+      const { data: existing } = await supabaseAdmin
+        .from('user_tasks')
+        .select('id')
+        .eq('user_id', user_id)
+        .eq('task_key', task_key)
+        .maybeSingle();
+
+      if (existing) {
+        return new Response(
+          JSON.stringify({ error: 'Task already completed' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Record task completion
+      const { error: taskError } = await supabaseAdmin
+        .from('user_tasks')
+        .insert({
+          user_id,
+          task_key,
+          task_title,
+          task_description,
+          bonus_amount: bonus_amount ?? 0,
+        });
+
+      if (taskError) {
+        console.error('Task insert error:', taskError);
+        throw new Error('Failed to record task completion');
+      }
+
+      // Credit bonus to user's mining balance
+      if (bonus_amount && bonus_amount > 0) {
+        const { data: existingBalance } = await supabaseAdmin
+          .from('mining_balances')
+          .select('available_balance, total_earned, total_withdrawn')
+          .eq('user_id', user_id)
+          .maybeSingle();
+
+        if (existingBalance) {
+          await supabaseAdmin
+            .from('mining_balances')
+            .update({
+              available_balance: existingBalance.available_balance + bonus_amount,
+              total_earned: existingBalance.total_earned + bonus_amount,
+            })
+            .eq('user_id', user_id);
+        } else {
+          await supabaseAdmin
+            .from('mining_balances')
+            .insert({
+              user_id,
+              available_balance: bonus_amount,
+              total_earned: bonus_amount,
+              total_withdrawn: 0,
+            });
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ message: 'Task completed successfully', bonus_credited: bonus_amount }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // ── Withdraw ─────────────────────────────────────────────────────────────
     if (action === 'withdraw') {
       const { amount, bank_code, bank_name, account_number, account_name, user_id, user_email } = body;
@@ -93,7 +292,7 @@ serve(async (req: Request) => {
       }
 
       // Check available balance
-      const { data: balanceData, error: balanceError } = await supabaseAdmin
+      const { data: balanceData } = await supabaseAdmin
         .from('mining_balances')
         .select('available_balance, total_withdrawn, total_earned')
         .eq('user_id', user_id)

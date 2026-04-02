@@ -28,14 +28,15 @@ export class AuthService {
   }
 
   /**
-   * Verify OTP and set password for new user
+   * Verify OTP, set password, and save profile (including referral data)
    */
   async verifyOtpAndSetPassword(
     email: string,
     token: string,
     password: string,
     fullName: string,
-    referralCode: string
+    referralCode: string,
+    referredBy?: string  // the code entered by the user (someone else's code)
   ) {
     // Verify OTP
     const { data, error } = await supabase.auth.verifyOtp({
@@ -54,6 +55,24 @@ export class AuthService {
       },
     });
     if (updateError) throw updateError;
+
+    const userId = updateData.user?.id;
+    if (userId) {
+      // Upsert user_profile with referral_code and referred_by
+      const { error: profileError } = await supabase
+        .from('user_profiles')
+        .upsert({
+          id: userId,
+          email,
+          username: fullName,
+          referral_code: referralCode,
+          referred_by: referredBy || null,
+        }, { onConflict: 'id' });
+
+      if (profileError) {
+        console.error('Failed to save user profile with referral data:', profileError);
+      }
+    }
 
     return updateData.user;
   }

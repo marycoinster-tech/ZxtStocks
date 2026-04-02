@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { Loader2, Mail, Lock, User, ArrowRight, Gift } from 'lucide-react';
 import { toast } from 'sonner';
 import { authService } from '@/lib/auth-service';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,6 +13,7 @@ import { generateReferralCode } from '@/lib/utils';
 
 export default function SignupPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useAuth();
   const [step, setStep] = useState<'email' | 'verify'>('email');
   const [loading, setLoading] = useState(false);
@@ -21,6 +22,13 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [otp, setOtp] = useState('');
+  const [referredBy, setReferredBy] = useState('');
+
+  // Pre-fill referral code from URL ?ref=XXXXX
+  useEffect(() => {
+    const ref = searchParams.get('ref');
+    if (ref) setReferredBy(ref.toUpperCase());
+  }, [searchParams]);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,13 +76,14 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      const referralCode = generateReferralCode();
+      const myReferralCode = generateReferralCode();
       const user = await authService.verifyOtpAndSetPassword(
         email,
         otp,
         password,
         fullName,
-        referralCode
+        myReferralCode,
+        referredBy || undefined
       );
       
       if (user) {
@@ -168,6 +177,28 @@ export default function SignupPage() {
                     required
                   />
                 </div>
+              </div>
+
+              {/* Referral Code Field */}
+              <div className="space-y-2">
+                <Label htmlFor="referredBy" className="flex items-center gap-2">
+                  <Gift className="w-4 h-4 text-primary" />
+                  Referral Code <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <Input
+                  id="referredBy"
+                  placeholder="Enter referral code"
+                  value={referredBy}
+                  onChange={(e) => setReferredBy(e.target.value.toUpperCase())}
+                  className="uppercase tracking-wider"
+                  disabled={loading}
+                  maxLength={12}
+                />
+                {referredBy && (
+                  <p className="text-xs text-primary">
+                    Your referrer will earn a bonus when you purchase a plan!
+                  </p>
+                )}
               </div>
 
               <Button type="submit" className="w-full" size="lg" disabled={loading}>

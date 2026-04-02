@@ -4,13 +4,116 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { TrendingUp, Wallet, Zap, Users, ArrowUpRight, Clock } from 'lucide-react';
+import { TrendingUp, Wallet, Zap, Users, ArrowUpRight, Clock, CheckCircle2, ListChecks, Loader2, Lock } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { formatCurrency, calculateMiningProgress, getDaysRemaining } from '@/lib/utils';
 import { MINING_PLANS } from '@/constants/plans';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { FunctionsHttpError } from '@supabase/supabase-js';
+import { toast } from 'sonner';
+
+// ── Task definitions per plan ────────────────────────────────────────────────
+const TASKS_BY_PLAN: Record<string, { key: string; title: string; description: string; bonus: number }[]> = {
+  starter: [
+    { key: 'watch_tutorial', title: 'Watch Mining Tutorial', description: 'Watch the 2-min intro video on how cloud mining works', bonus: 50 },
+    { key: 'share_referral', title: 'Share Referral Code', description: 'Share your referral link with at least one contact', bonus: 100 },
+    { key: 'complete_profile', title: 'Complete Your Profile', description: 'Add your display name and verify email', bonus: 50 },
+    { key: 'first_login', title: 'Daily Login Streak (Day 1)', description: 'Log in for your first day on the platform', bonus: 50 },
+    { key: 'read_faq', title: 'Read the FAQ', description: 'Visit the How It Works page and read the FAQ section', bonus: 50 },
+    { key: 'explore_plans', title: 'Explore Mining Plans', description: 'Browse all available mining plans', bonus: 50 },
+    { key: 'join_community', title: 'Join Our Community', description: 'Follow us on social media for mining tips and updates', bonus: 50 },
+    { key: 'withdraw_check', title: 'Explore Withdrawals', description: 'Visit the withdrawal page and review how payouts work', bonus: 50 },
+    { key: 'invite_friend', title: 'Invite a Friend', description: 'Successfully invite a friend who creates an account', bonus: 100 },
+    { key: 'streak_7', title: '7-Day Login Streak', description: 'Log in for 7 consecutive days to earn this milestone bonus', bonus: 250 },
+  ],
+  professional: [
+    { key: 'watch_tutorial', title: 'Watch Mining Tutorial', description: 'Watch the intro video on how cloud mining works', bonus: 150 },
+    { key: 'share_referral', title: 'Share Referral Code', description: 'Share your referral link with at least 3 contacts', bonus: 300 },
+    { key: 'complete_profile', title: 'Complete Your Profile', description: 'Verify your profile details and email', bonus: 150 },
+    { key: 'first_login', title: 'Daily Login Streak (Day 1)', description: 'Log in for your first day on the platform', bonus: 150 },
+    { key: 'read_faq', title: 'Read the FAQ', description: 'Visit and read the full How It Works guide', bonus: 100 },
+    { key: 'explore_plans', title: 'Explore Mining Plans', description: 'Review all mining plan tiers and compare features', bonus: 100 },
+    { key: 'join_community', title: 'Join Our Community', description: 'Follow Zxt Stocks on social channels', bonus: 150 },
+    { key: 'withdraw_check', title: 'Setup Withdrawal', description: 'Add your bank account on the withdrawal page', bonus: 100 },
+    { key: 'invite_friend', title: 'Invite 2 Friends', description: 'Successfully refer 2 friends who create accounts', bonus: 300 },
+    { key: 'streak_7', title: '7-Day Login Streak', description: 'Log in 7 consecutive days for a streak bonus', bonus: 500 },
+    { key: 'streak_14', title: '14-Day Login Streak', description: 'Log in 14 consecutive days for a bigger bonus', bonus: 750 },
+    { key: 'share_earnings', title: 'Share Your Earnings', description: 'Post a screenshot of your earnings on social media', bonus: 200 },
+    { key: 'refer_premium', title: 'Refer a Premium User', description: 'Refer someone who purchases the Elite or Enterprise plan', bonus: 500 },
+    { key: 'first_withdrawal', title: 'Make Your First Withdrawal', description: 'Complete your first successful withdrawal request', bonus: 200 },
+    { key: 'plan_review', title: 'Leave a Plan Review', description: 'Submit feedback on your mining experience', bonus: 100 },
+    // Fill to 30
+    ...Array.from({ length: 15 }, (_, i) => ({
+      key: `bonus_task_${i + 1}`,
+      title: `Bonus Mining Task ${i + 1}`,
+      description: `Complete mining bonus activity ${i + 1} to earn extra rewards`,
+      bonus: 100,
+    })),
+  ],
+  elite: [
+    { key: 'watch_tutorial', title: 'Watch Mining Tutorial', description: 'Watch the advanced mining overview video', bonus: 400 },
+    { key: 'share_referral', title: 'Share Referral Code', description: 'Share your link with 5+ contacts', bonus: 600 },
+    { key: 'complete_profile', title: 'Complete Your Profile', description: 'Fully verify your profile', bonus: 400 },
+    { key: 'first_login', title: 'Daily Login Streak (Day 1)', description: 'First day login bonus', bonus: 300 },
+    { key: 'streak_7', title: '7-Day Streak', description: 'Maintain 7-day login streak', bonus: 1000 },
+    { key: 'streak_14', title: '14-Day Streak', description: 'Maintain 14-day login streak', bonus: 1500 },
+    { key: 'streak_30', title: '30-Day Streak', description: 'Complete the full 30-day mining period daily', bonus: 3000 },
+    { key: 'invite_5', title: 'Invite 5 Friends', description: 'Refer 5 friends who register', bonus: 1000 },
+    { key: 'first_withdrawal', title: 'First Withdrawal', description: 'Complete your first successful withdrawal', bonus: 500 },
+    { key: 'share_earnings', title: 'Share Earnings Screenshot', description: 'Share your mining stats on social media', bonus: 400 },
+    // Fill to 60
+    ...Array.from({ length: 50 }, (_, i) => ({
+      key: `elite_task_${i + 1}`,
+      title: `Elite Mining Task ${i + 1}`,
+      description: `Complete elite bonus activity ${i + 1} to earn your daily reward`,
+      bonus: 200,
+    })),
+  ],
+  enterprise: [
+    { key: 'watch_tutorial', title: 'Watch Mining Tutorial', description: 'Watch the enterprise mining mastery video', bonus: 1000 },
+    { key: 'share_referral', title: 'Share Referral Code', description: 'Share your link with 10+ contacts', bonus: 2000 },
+    { key: 'complete_profile', title: 'Complete Your Profile', description: 'Fully verify enterprise profile', bonus: 1000 },
+    { key: 'first_login', title: 'Daily Login Streak (Day 1)', description: 'First day login bonus', bonus: 500 },
+    { key: 'streak_7', title: '7-Day Streak', description: 'Maintain 7-day login streak', bonus: 2000 },
+    { key: 'streak_14', title: '14-Day Streak', description: 'Maintain 14-day login streak', bonus: 3000 },
+    { key: 'streak_30', title: '30-Day Streak', description: 'Complete the full 30-day period daily', bonus: 7000 },
+    { key: 'invite_10', title: 'Invite 10 Friends', description: 'Refer 10 friends who register', bonus: 3000 },
+    { key: 'first_withdrawal', title: 'First Withdrawal', description: 'Complete your first withdrawal', bonus: 1000 },
+    { key: 'share_earnings', title: 'Share Earnings Screenshot', description: 'Share your mining stats publicly', bonus: 1000 },
+    // Fill to 100
+    ...Array.from({ length: 90 }, (_, i) => ({
+      key: `enterprise_task_${i + 1}`,
+      title: `Enterprise Task ${i + 1}`,
+      description: `Complete enterprise bonus activity ${i + 1} for premium rewards`,
+      bonus: 500,
+    })),
+  ],
+};
+
+async function callEdgeFunction(action: string, payload?: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke('paystack-transfer', {
+    body: { action, ...payload },
+  });
+  if (error) {
+    let errorMessage = error.message;
+    if (error instanceof FunctionsHttpError) {
+      try {
+        const statusCode = error.context?.status ?? 500;
+        const textContent = await error.context?.text();
+        errorMessage = `[Code: ${statusCode}] ${textContent || error.message}`;
+      } catch {
+        errorMessage = error.message || 'Unknown error';
+      }
+    }
+    throw new Error(errorMessage);
+  }
+  return data;
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { user: authUser } = useAuth();
   const user = storage.getUser();
   const session = storage.getMiningSession();
   const transactions = storage.getTransactions();
@@ -18,9 +121,12 @@ export default function DashboardPage() {
 
   const [currentMined, setCurrentMined] = useState(0);
   const [todayEarned, setTodayEarned] = useState(0);
+  const [completedTasks, setCompletedTasks] = useState<string[]>([]);
+  const [claimingTask, setClaimingTask] = useState<string | null>(null);
+  const [loadingTasks, setLoadingTasks] = useState(true);
 
   useEffect(() => {
-    if (!user) {
+    if (!user && !authUser) {
       navigate('/plans');
       return;
     }
@@ -28,51 +134,86 @@ export default function DashboardPage() {
     if (session) {
       const plan = MINING_PLANS.find((p) => p.id === session.planId);
       if (plan) {
-        // Simulate mining progress
         const interval = setInterval(() => {
           const progress = calculateMiningProgress(session.startDate, session.endDate);
           const totalExpected = plan.totalReturn;
           const mined = (progress / 100) * totalExpected;
           setCurrentMined(mined);
-
-          // Calculate today's earnings
           const daysPassed = Math.floor((Date.now() - new Date(session.startDate).getTime()) / (1000 * 60 * 60 * 24));
           const earned = Math.min(plan.dailyReturn, mined - (daysPassed - 1) * plan.dailyReturn);
           setTodayEarned(Math.max(0, earned));
         }, 1000);
-
         return () => clearInterval(interval);
       }
     }
-  }, [user, session, navigate]);
+  }, [user, authUser, session, navigate]);
 
-  if (!user || !session) {
-    return null;
-  }
+  // Load completed tasks from DB
+  useEffect(() => {
+    const fetchTasks = async () => {
+      if (!authUser) { setLoadingTasks(false); return; }
+      const { data } = await supabase
+        .from('user_tasks')
+        .select('task_key')
+        .eq('user_id', authUser.id);
+      if (data) setCompletedTasks(data.map((t) => t.task_key));
+      setLoadingTasks(false);
+    };
+    fetchTasks();
+  }, [authUser]);
 
-  const plan = MINING_PLANS.find((p) => p.id === session.planId);
-  if (!plan) return null;
+  const handleClaimTask = async (task: { key: string; title: string; description: string; bonus: number }) => {
+    if (!authUser) return;
+    setClaimingTask(task.key);
+    try {
+      await callEdgeFunction('complete_task', {
+        user_id: authUser.id,
+        task_key: task.key,
+        task_title: task.title,
+        task_description: task.description,
+        bonus_amount: task.bonus,
+      });
+      setCompletedTasks((prev) => [...prev, task.key]);
+      toast.success(`Task completed! +${formatCurrency(task.bonus)} credited to your balance`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to claim task');
+    } finally {
+      setClaimingTask(null);
+    }
+  };
 
-  const progress = calculateMiningProgress(session.startDate, session.endDate);
-  const daysRemaining = getDaysRemaining(session.endDate);
+  if (!user && !authUser) return null;
+
+  const displayName = authUser?.fullName || user?.fullName || 'Miner';
+  const plan = session ? MINING_PLANS.find((p) => p.id === session.planId) : null;
+  const progress = session ? calculateMiningProgress(session.startDate, session.endDate) : 0;
+  const daysRemaining = session ? getDaysRemaining(session.endDate) : 0;
   const totalReferralBonus = referrals.reduce((sum, ref) => sum + ref.bonus, 0);
+
+  // Tasks for active plan
+  const activePlanId = session?.planId || 'starter';
+  const planTasks = TASKS_BY_PLAN[activePlanId] || TASKS_BY_PLAN.starter;
+  const taskQuota = plan?.monthlyTasks || 10;
+  const visibleTasks = planTasks.slice(0, taskQuota);
+  const completedCount = visibleTasks.filter((t) => completedTasks.includes(t.key)).length;
+  const taskProgress = taskQuota > 0 ? (completedCount / taskQuota) * 100 : 0;
 
   const stats = [
     {
       title: 'Total Mined',
-      value: formatCurrency(currentMined),
+      value: plan ? formatCurrency(currentMined) : '₦0.00',
       icon: Wallet,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
-      change: `+${formatCurrency(todayEarned)} today`,
+      change: plan ? `+${formatCurrency(todayEarned)} today` : 'No active plan',
     },
     {
       title: 'Mining Power',
-      value: `${plan.hashRate} TH/s`,
+      value: plan ? `${plan.hashRate} TH/s` : '— TH/s',
       icon: Zap,
       color: 'text-secondary',
       bgColor: 'bg-secondary/10',
-      change: 'Active',
+      change: plan ? 'Active' : 'Inactive',
     },
     {
       title: 'Referral Bonus',
@@ -84,7 +225,7 @@ export default function DashboardPage() {
     },
     {
       title: 'Days Remaining',
-      value: daysRemaining.toString(),
+      value: plan ? daysRemaining.toString() : '—',
       icon: Clock,
       color: 'text-info',
       bgColor: 'bg-info/10',
@@ -98,7 +239,7 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Header */}
           <div>
-            <h1 className="text-4xl font-bold mb-2">Welcome back, {user.fullName}!</h1>
+            <h1 className="text-4xl font-bold mb-2">Welcome back, {displayName}!</h1>
             <p className="text-muted-foreground">Here's your mining overview</p>
           </div>
 
@@ -107,9 +248,7 @@ export default function DashboardPage() {
             {stats.map((stat, index) => (
               <Card key={index}>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {stat.title}
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
                   <div className={`w-10 h-10 ${stat.bgColor} rounded-lg flex items-center justify-center`}>
                     <stat.icon className={`w-5 h-5 ${stat.color}`} />
                   </div>
@@ -123,78 +262,170 @@ export default function DashboardPage() {
           </div>
 
           {/* Mining Progress */}
-          <Card className="border-primary/50">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-2xl">Mining Progress</CardTitle>
-                  <CardDescription>{plan.name} - Active</CardDescription>
+          {plan && session ? (
+            <Card className="border-primary/50">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-2xl">Mining Progress</CardTitle>
+                    <CardDescription>{plan.name} - Active</CardDescription>
+                  </div>
+                  <Badge variant="default" className="animate-pulse-glow">Mining Active</Badge>
                 </div>
-                <Badge variant="default" className="animate-pulse-glow">
-                  Mining Active
-                </Badge>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Mining Progress</span>
+                    <span className="font-medium">{progress.toFixed(2)}%</span>
+                  </div>
+                  <div className="relative">
+                    <Progress value={progress} className="h-4" />
+                    <div className="absolute inset-0 overflow-hidden rounded-full">
+                      <div className="h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-mining-progress" style={{ width: '50%' }} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { label: 'Current Mined', value: formatCurrency(currentMined), color: 'text-primary' },
+                    { label: 'Target Return', value: formatCurrency(plan.totalReturn), color: '' },
+                    { label: 'Daily Rate', value: formatCurrency(plan.dailyReturn), color: 'text-secondary' },
+                    { label: 'Hash Rate', value: `${plan.hashRate} TH/s`, color: 'text-accent' },
+                  ].map((item) => (
+                    <div key={item.label} className="p-4 bg-muted/50 rounded-lg">
+                      <div className="text-sm text-muted-foreground">{item.label}</div>
+                      <div className={`text-xl font-bold mt-1 ${item.color}`}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-4">
+                  <Button variant="outline" className="flex-1">View Details</Button>
+                  <Button className="flex-1" onClick={() => navigate('/withdraw')}>
+                    Withdraw Earnings <ArrowUpRight className="ml-2 w-4 h-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-dashed border-primary/30">
+              <CardContent className="py-16 text-center">
+                <Zap className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
+                <p className="text-muted-foreground mb-4">No active mining plan. Purchase a plan to start earning.</p>
+                <Button onClick={() => navigate('/plans')}>View Plans</Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── TASKS SECTION ─────────────────────────────────────────────────── */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div>
+                  <CardTitle className="text-2xl flex items-center gap-2">
+                    <ListChecks className="w-6 h-6 text-primary" />
+                    Monthly Tasks
+                  </CardTitle>
+                  <CardDescription>
+                    Complete tasks to earn bonus mining rewards · {plan?.name || 'Starter Plan'}
+                  </CardDescription>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-primary">{completedCount}/{taskQuota}</div>
+                  <div className="text-xs text-muted-foreground">tasks completed</div>
+                </div>
+              </div>
+
+              {/* Task progress bar */}
+              <div className="space-y-1 pt-2">
+                <Progress value={taskProgress} className="h-2" />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{completedCount} completed</span>
+                  <span>{taskQuota - completedCount} remaining</span>
+                </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Progress Bar */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Mining Progress</span>
-                  <span className="font-medium">{progress.toFixed(2)}%</span>
-                </div>
-                <div className="relative">
-                  <Progress value={progress} className="h-4" />
-                  <div className="absolute inset-0 overflow-hidden rounded-full">
-                    <div
-                      className="h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-mining-progress"
-                      style={{ width: '50%' }}
-                    />
-                  </div>
-                </div>
-              </div>
 
-              {/* Mining Stats */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <div className="text-sm text-muted-foreground">Current Mined</div>
-                  <div className="text-xl font-bold text-primary mt-1">
-                    {formatCurrency(currentMined)}
-                  </div>
+            <CardContent>
+              {loadingTasks ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
                 </div>
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <div className="text-sm text-muted-foreground">Target Return</div>
-                  <div className="text-xl font-bold mt-1">
-                    {formatCurrency(plan.totalReturn)}
-                  </div>
-                </div>
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <div className="text-sm text-muted-foreground">Daily Rate</div>
-                  <div className="text-xl font-bold text-secondary mt-1">
-                    {formatCurrency(plan.dailyReturn)}
-                  </div>
-                </div>
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <div className="text-sm text-muted-foreground">Hash Rate</div>
-                  <div className="text-xl font-bold text-accent mt-1">
-                    {plan.hashRate} TH/s
-                  </div>
-                </div>
-              </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {visibleTasks.map((task) => {
+                    const isDone = completedTasks.includes(task.key);
+                    const isClaiming = claimingTask === task.key;
+                    const isLocked = !plan;
 
-              {/* Actions */}
-              <div className="flex gap-4">
-                <Button variant="outline" className="flex-1">
-                  View Details
-                </Button>
-                <Button className="flex-1">
-                  Withdraw Earnings
-                  <ArrowUpRight className="ml-2 w-4 h-4" />
-                </Button>
-              </div>
+                    return (
+                      <div
+                        key={task.key}
+                        className={`flex items-start gap-4 p-4 rounded-xl border transition-all ${
+                          isDone
+                            ? 'bg-green-500/5 border-green-500/20 opacity-70'
+                            : isLocked
+                            ? 'bg-muted/20 border-border opacity-50'
+                            : 'bg-muted/30 border-border hover:border-primary/40'
+                        }`}
+                      >
+                        {/* Icon */}
+                        <div className={`w-10 h-10 rounded-lg shrink-0 flex items-center justify-center ${
+                          isDone ? 'bg-green-500/20' : 'bg-primary/10'
+                        }`}>
+                          {isDone ? (
+                            <CheckCircle2 className="w-5 h-5 text-green-500" />
+                          ) : isLocked ? (
+                            <Lock className="w-5 h-5 text-muted-foreground" />
+                          ) : (
+                            <ListChecks className="w-5 h-5 text-primary" />
+                          )}
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm leading-tight">{task.title}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{task.description}</div>
+                          <div className="text-xs font-semibold text-primary mt-1">+{formatCurrency(task.bonus)}</div>
+                        </div>
+
+                        {/* Action */}
+                        <div className="shrink-0">
+                          {isDone ? (
+                            <Badge variant="outline" className="text-green-500 border-green-500/30 bg-green-500/10 text-xs">
+                              Done
+                            </Badge>
+                          ) : isLocked ? (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
+                              Locked
+                            </Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-8 px-3"
+                              onClick={() => handleClaimTask(task)}
+                              disabled={isClaiming}
+                            >
+                              {isClaiming ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                'Claim'
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Recent Activity */}
+          {/* Recent Activity & Referrals */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
@@ -207,15 +438,10 @@ export default function DashboardPage() {
                 ) : (
                   <div className="space-y-4">
                     {transactions.slice(0, 5).map((transaction) => (
-                      <div
-                        key={transaction.id}
-                        className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
-                      >
+                      <div key={transaction.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                         <div>
                           <div className="font-medium">{transaction.description}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {new Date(transaction.createdAt).toLocaleDateString()}
-                          </div>
+                          <div className="text-sm text-muted-foreground">{new Date(transaction.createdAt).toLocaleDateString()}</div>
                         </div>
                         <div className="text-right">
                           <div className={`font-bold ${transaction.type === 'payment' ? 'text-destructive' : 'text-success'}`}>
@@ -245,11 +471,15 @@ export default function DashboardPage() {
                 <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
                   <div className="text-sm text-muted-foreground mb-2">Your Referral Code</div>
                   <div className="flex items-center justify-between">
-                    <code className="text-2xl font-bold text-primary">{user.referralCode}</code>
+                    <code className="text-2xl font-bold text-primary tracking-wider">
+                      {authUser?.referralCode || user?.referralCode || '—'}
+                    </code>
                     <Button
                       size="sm"
                       onClick={() => {
-                        navigator.clipboard.writeText(user.referralCode);
+                        const code = authUser?.referralCode || user?.referralCode || '';
+                        navigator.clipboard.writeText(code);
+                        toast.success('Referral code copied!');
                       }}
                     >
                       Copy
@@ -263,16 +493,13 @@ export default function DashboardPage() {
                     <div className="text-sm text-muted-foreground mt-1">Total Referrals</div>
                   </div>
                   <div className="p-4 bg-muted/50 rounded-lg text-center">
-                    <div className="text-3xl font-bold text-success">
-                      {formatCurrency(totalReferralBonus)}
-                    </div>
+                    <div className="text-3xl font-bold text-success">{formatCurrency(totalReferralBonus)}</div>
                     <div className="text-sm text-muted-foreground mt-1">Total Earned</div>
                   </div>
                 </div>
 
                 <Button variant="outline" className="w-full" onClick={() => navigate('/referrals')}>
-                  View Referrals
-                  <ArrowUpRight className="ml-2 w-4 h-4" />
+                  View Referrals <ArrowUpRight className="ml-2 w-4 h-4" />
                 </Button>
               </CardContent>
             </Card>
@@ -284,13 +511,10 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-2xl font-bold mb-2">Ready to Earn More?</h3>
-                  <p className="text-muted-foreground">
-                    Upgrade to a higher plan and increase your daily returns
-                  </p>
+                  <p className="text-muted-foreground">Upgrade to a higher plan and increase your daily returns</p>
                 </div>
                 <Button size="lg" onClick={() => navigate('/plans')}>
-                  Upgrade Plan
-                  <TrendingUp className="ml-2 w-5 h-5" />
+                  Upgrade Plan <TrendingUp className="ml-2 w-5 h-5" />
                 </Button>
               </div>
             </CardContent>
