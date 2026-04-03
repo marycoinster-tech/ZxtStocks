@@ -4,6 +4,19 @@ import { authService } from '@/lib/auth-service';
 import { AuthUser } from '@/types';
 import { User } from '@supabase/supabase-js';
 
+/** Fetch referral_code from user_profiles and merge into AuthUser */
+async function enrichWithProfile(authUser: AuthUser): Promise<AuthUser> {
+  const { data } = await supabase
+    .from('user_profiles')
+    .select('referral_code')
+    .eq('id', authUser.id)
+    .maybeSingle();
+  if (data?.referral_code) {
+    return { ...authUser, referralCode: data.referral_code };
+  }
+  return authUser;
+}
+
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
@@ -29,9 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     // Safety #1: Check existing session (page refresh)
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (mounted && session?.user) {
-        login(authService.mapUser(session.user));
+        const base = authService.mapUser(session.user);
+        const enriched = await enrichWithProfile(base);
+        if (mounted) login(enriched);
       }
       if (mounted) setLoading(false);
     });
@@ -44,13 +59,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('Auth state change:', event);
 
         if (event === 'SIGNED_IN' && session?.user) {
-          login(authService.mapUser(session.user));
+          const base = authService.mapUser(session.user);
+          enrichWithProfile(base).then((enriched) => {
+            if (mounted) login(enriched);
+          });
           setLoading(false);
         } else if (event === 'SIGNED_OUT') {
           logout();
           setLoading(false);
         } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          login(authService.mapUser(session.user));
+          const base = authService.mapUser(session.user);
+          enrichWithProfile(base).then((enriched) => {
+            if (mounted) login(enriched);
+          });
         }
       }
     );

@@ -16,6 +16,8 @@ import {
   Crown,
   Zap,
   Award,
+  MessageCircle,
+  Send,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -100,14 +102,32 @@ export default function ReferralsPage() {
     toast.success('Referral link copied!');
   };
 
+  const shareMessage = `🚀 Start earning from crypto mining with Zxt Stocks! Use my referral code: *${referralCode}* and we both earn bonuses. Join here:`;
+
   const handleShare = () => {
-    const shareText = `Join me on Zxt Stocks and start earning from crypto mining! Use my referral code: ${referralCode}`;
     if (navigator.share) {
-      navigator.share({ title: 'Join Zxt Stocks', text: shareText, url: referralLink });
+      navigator.share({ title: 'Join Zxt Stocks', text: shareMessage, url: referralLink });
     } else {
-      navigator.clipboard.writeText(`${shareText}\n${referralLink}`);
+      navigator.clipboard.writeText(`${shareMessage}\n${referralLink}`);
       toast.success('Share text copied to clipboard!');
     }
+  };
+
+  const handleWhatsApp = () => {
+    const text = encodeURIComponent(`${shareMessage}\n${referralLink}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const handleTwitter = () => {
+    const text = encodeURIComponent(`🚀 Earning from crypto mining with Zxt Stocks! Use my code *${referralCode}* to get started and we both earn bonuses. 💰`);
+    const url = encodeURIComponent(referralLink);
+    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, '_blank');
+  };
+
+  const handleTelegram = () => {
+    const text = encodeURIComponent(shareMessage);
+    const url = encodeURIComponent(referralLink);
+    window.open(`https://t.me/share/url?url=${url}&text=${text}`, '_blank');
   };
 
   const planBonusTiers = [
@@ -192,14 +212,44 @@ export default function ReferralsPage() {
                   <Copy className="w-4 h-4 mr-2" /> Copy
                 </Button>
               </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button size="lg" onClick={handleShare} className="flex-1">
-                  <Share2 className="mr-2 w-4 h-4" />
-                  Share via Apps
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* WhatsApp */}
+                <Button
+                  size="lg"
+                  onClick={handleWhatsApp}
+                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] text-white border-0"
+                >
+                  <MessageCircle className="mr-2 w-4 h-4" />
+                  WhatsApp
                 </Button>
+
+                {/* Twitter / X */}
+                <Button
+                  size="lg"
+                  onClick={handleTwitter}
+                  className="flex-1 bg-[#1DA1F2] hover:bg-[#1a91da] text-white border-0"
+                >
+                  {/* X (Twitter) icon via SVG */}
+                  <svg className="mr-2 w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.747l7.73-8.835L1.254 2.25H8.08l4.258 5.63 5.906-5.63Zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  Twitter/X
+                </Button>
+
+                {/* Telegram */}
+                <Button
+                  size="lg"
+                  onClick={handleTelegram}
+                  className="flex-1 bg-[#0088CC] hover:bg-[#007ab8] text-white border-0"
+                >
+                  <Send className="mr-2 w-4 h-4" />
+                  Telegram
+                </Button>
+
+                {/* Copy Link */}
                 <Button size="lg" variant="outline" className="flex-1" onClick={handleCopyLink}>
-                  <ExternalLink className="mr-2 w-4 h-4" />
-                  Copy Full Link
+                  <Copy className="mr-2 w-4 h-4" />
+                  Copy Link
                 </Button>
               </div>
             </CardContent>
