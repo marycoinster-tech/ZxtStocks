@@ -13,6 +13,7 @@ import ReferralsPage from '@/pages/ReferralsPage';
 import PlansPage from '@/pages/PlansPage';
 import HowItWorksPage from '@/pages/HowItWorksPage';
 import WithdrawalPage from '@/pages/WithdrawalPage';
+import AdminPage from '@/pages/AdminPage';
 import NotFound from '@/pages/NotFound';
 
 function App() {
@@ -60,6 +61,7 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route path="/admin" element={<AdminPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>

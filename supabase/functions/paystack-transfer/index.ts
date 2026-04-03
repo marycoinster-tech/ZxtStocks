@@ -543,6 +543,82 @@ serve(async (req: Request) => {
       );
     }
 
+    // ── Admin Dashboard Stats ────────────────────────────────────────────────
+    if (action === 'admin_stats') {
+      // Server-side admin guard — only these emails can call this action
+      const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com'];
+
+      // Verify caller via JWT
+      const authHeader = req.headers.get('Authorization');
+      const token = authHeader?.replace('Bearer ', '');
+      if (!token) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const supabaseUser = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
+      );
+
+      const { data: { user: caller }, error: callerErr } = await supabaseUser.auth.getUser(token);
+      if (callerErr || !caller) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!ADMIN_EMAILS.includes(caller.email ?? '')) {
+        return new Response(JSON.stringify({ error: 'Forbidden: not an admin' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Fetch all data using service role
+      const [profilesRes, balancesRes, withdrawalsRes, transactionsRes] = await Promise.all([
+        supabaseAdmin.from('user_profiles').select('id, email, username, referral_code, referred_by'),
+        supabaseAdmin.from('mining_balances').select('user_id, available_balance, total_earned, total_withdrawn, updated_at'),
+        supabaseAdmin.from('withdrawals').select('id, user_id, amount, bank_name, account_number, account_name, status, created_at, failure_reason').order('created_at', { ascending: false }),
+        supabaseAdmin.from('transactions').select('id, user_id, type, amount, status, description, plan_name, created_at').order('created_at', { ascending: false }).limit(200),
+      ]);
+
+      // Aggregate stats
+      const profiles = profilesRes.data ?? [];
+      const balances = balancesRes.data ?? [];
+      const withdrawals = withdrawalsRes.data ?? [];
+      const transactions = transactionsRes.data ?? [];
+
+      const totalRevenue = transactions
+        .filter((t: Record<string, unknown>) => t.type === 'payment' && t.status === 'completed')
+        .reduce((s: number, t: Record<string, unknown>) => s + (t.amount as number), 0);
+
+      const pendingWithdrawals = withdrawals.filter((w: Record<string, unknown>) => w.status === 'pending' || w.status === 'processing');
+      const pendingWithdrawalTotal = pendingWithdrawals.reduce((s: number, w: Record<string, unknown>) => s + (w.amount as number), 0);
+
+      const totalPaidOut = withdrawals
+        .filter((w: Record<string, unknown>) => w.status === 'success')
+        .reduce((s: number, w: Record<string, unknown>) => s + (w.amount as number), 0);
+
+      return new Response(
+        JSON.stringify({
+          stats: {
+            total_users: profiles.length,
+            total_revenue: totalRevenue,
+            total_paid_out: totalPaidOut,
+            pending_withdrawals_count: pendingWithdrawals.length,
+            pending_withdrawals_total: pendingWithdrawalTotal,
+          },
+          profiles,
+          balances,
+          withdrawals,
+          transactions,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Unknown action
     return new Response(
       JSON.stringify({ error: `Unknown action: ${action}` }),
