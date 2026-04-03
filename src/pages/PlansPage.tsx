@@ -107,12 +107,35 @@ export default function PlansPage() {
     // Sync to Supabase if user is authenticated
     if (userId) {
       console.log('Syncing plan activation to Supabase for user:', userId);
+
+      // 1. Activate plan + credit referral bonus
       await callEdgeFunction('activate_plan', {
         user_id: userId,
         plan_id: currentPlan.id,
         plan_name: currentPlan.name,
         referred_email: userEmail,
       });
+
+      // 2. Insert payment transaction record into DB
+      const { error: txError } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: userId,
+          type: 'payment',
+          amount: currentPlan.price,
+          currency: 'NGN',
+          status: 'completed',
+          description: `Payment for ${currentPlan.name}`,
+          reference: response.reference || response.trxref || null,
+          plan_id: currentPlan.id,
+          plan_name: currentPlan.name,
+        });
+
+      if (txError) {
+        console.error('Failed to save payment transaction:', txError);
+      } else {
+        console.log('Payment transaction saved to DB');
+      }
     }
 
     setIsProcessing(false);

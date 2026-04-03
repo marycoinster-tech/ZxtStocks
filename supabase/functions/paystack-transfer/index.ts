@@ -150,6 +150,23 @@ serve(async (req: Request) => {
 
             referralCredited = true;
             console.log(`Referral bonus ₦${bonusAmount} credited to ${referrerProfile.email}`);
+
+            // Log referral bonus as a transaction for the referrer
+            await supabaseAdmin
+              .from('transactions')
+              .insert({
+                user_id: referrerId,
+                type: 'referral_bonus',
+                amount: bonusAmount,
+                currency: 'NGN',
+                status: 'completed',
+                description: `Referral bonus — ${referredProfile.email || 'a friend'} joined ${plan_name || plan_id}`,
+                plan_id,
+                plan_name: plan_name || plan_id,
+              })
+              .then(({ error }) => {
+                if (error) console.error('Failed to log referral transaction:', error);
+              });
           }
         }
       }
@@ -379,6 +396,23 @@ serve(async (req: Request) => {
         }
       }
 
+      // Log task bonus as a transaction
+      if (bonus_amount && bonus_amount > 0) {
+        await supabaseAdmin
+          .from('transactions')
+          .insert({
+            user_id,
+            type: 'task_bonus',
+            amount: bonus_amount,
+            currency: 'NGN',
+            status: 'completed',
+            description: `Task completed: ${task_title}`,
+          })
+          .then(({ error }) => {
+            if (error) console.error('Failed to log task transaction:', error);
+          });
+      }
+
       return new Response(
         JSON.stringify({ message: 'Task completed successfully', bonus_credited: bonus_amount }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -467,6 +501,22 @@ serve(async (req: Request) => {
         console.error('DB insert error:', insertError);
         throw new Error('Failed to record withdrawal: ' + insertError.message);
       }
+
+      // Step 3b: Insert into transactions table for unified history
+      await supabaseAdmin
+        .from('transactions')
+        .insert({
+          user_id,
+          type: 'withdrawal',
+          amount: parseFloat(amount),
+          currency: 'NGN',
+          status: transfer.status === 'success' ? 'completed' : 'pending',
+          description: `Withdrawal to ${bank_name} (${account_number})`,
+          reference: reference,
+        })
+        .then(({ error }) => {
+          if (error) console.error('Failed to log withdrawal transaction:', error);
+        });
 
       // Step 4: Deduct from user balance
       const newBalance = availableBalance - parseFloat(amount);
