@@ -40,10 +40,10 @@ import { toast } from 'sonner';
 
 // ── Hardcoded admin email allowlist ──────────────────────────────────────────
 // Add your admin email(s) here. Only these emails can access the admin panel.
-const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com', 'owner@zxtstocks.com'];
+const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com', 'iandanger121@gmail.com'];
 
 // ── Admin PIN (simple second-factor) ────────────────────────────────────────
-const ADMIN_PIN = '2580';
+const ADMIN_PIN = '1984';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface AdminStats {

