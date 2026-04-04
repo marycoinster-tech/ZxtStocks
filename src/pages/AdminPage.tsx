@@ -29,6 +29,8 @@ import {
   Lock,
   BarChart3,
   Activity,
+  BadgeCheck,
+  Ban,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -38,7 +40,7 @@ import { toast } from 'sonner';
 
 // ── Hardcoded admin email allowlist ──────────────────────────────────────────
 // Add your admin email(s) here. Only these emails can access the admin panel.
-const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com'];
+const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com', 'owner@zxtstocks.com'];
 
 // ── Admin PIN (simple second-factor) ────────────────────────────────────────
 const ADMIN_PIN = '2580';
@@ -133,6 +135,7 @@ export default function AdminPage() {
   const [balances, setBalances] = useState<MiningBalance[]>([]);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [updatingWithdrawal, setUpdatingWithdrawal] = useState<string | null>(null);
 
   // Search
   const [userSearch, setUserSearch] = useState('');
@@ -147,6 +150,40 @@ export default function AdminPage() {
       navigate('/login');
     }
   }, [authUser, navigate]);
+
+  const updateWithdrawalStatus = async (withdrawalId: string, newStatus: 'success' | 'failed') => {
+    setUpdatingWithdrawal(withdrawalId + newStatus);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+
+      const { data, error } = await supabase.functions.invoke('paystack-transfer', {
+        body: { action: 'update_withdrawal_status', withdrawal_id: withdrawalId, new_status: newStatus },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (error) {
+        let msg = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try { msg = await error.context?.text() || msg; } catch { /* noop */ }
+        }
+        toast.error('Failed: ' + msg);
+        return;
+      }
+
+      toast.success(
+        newStatus === 'success'
+          ? 'Withdrawal marked as paid successfully'
+          : `Withdrawal marked as failed — amount refunded to user's balance`
+      );
+      // Refresh data to reflect the changes
+      await fetchAdminData();
+    } catch (err: unknown) {
+      toast.error('Error: ' + (err instanceof Error ? err.message : 'Unknown'));
+    } finally {
+      setUpdatingWithdrawal(null);
+    }
+  };
 
   const fetchAdminData = useCallback(async () => {
     setLoading(true);
@@ -340,6 +377,9 @@ export default function AdminPage() {
                     <AlertTriangle className="w-4 h-4" />
                     {pendingWithdrawals.length} Pending Withdrawal{pendingWithdrawals.length > 1 ? 's' : ''} — {formatCurrency(stats?.pending_withdrawals_total ?? 0)} total
                   </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Use the buttons below to manually mark withdrawals after processing them in Paystack or your bank.
+                  </p>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
@@ -349,25 +389,68 @@ export default function AdminPage() {
                           <TableHead>User</TableHead>
                           <TableHead>Amount</TableHead>
                           <TableHead>Bank</TableHead>
-                          <TableHead>Account</TableHead>
+                          <TableHead>Account Name</TableHead>
+                          <TableHead>Account No.</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Date</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {pendingWithdrawals.map((w) => {
                           const profile = profiles.find((p) => p.id === w.user_id);
                           const cfg = STATUS_CFG[w.status] ?? STATUS_CFG.pending;
+                          const isPaidBusy = updatingWithdrawal === w.id + 'success';
+                          const isFailBusy = updatingWithdrawal === w.id + 'failed';
+                          const isBusy = isPaidBusy || isFailBusy;
                           return (
                             <TableRow key={w.id}>
-                              <TableCell className="font-mono text-xs">{profile?.email ?? shortId(w.user_id)}</TableCell>
+                              <TableCell>
+                                <div className="font-medium text-xs">{profile?.email ?? '—'}</div>
+                                <div className="font-mono text-xs text-muted-foreground">{shortId(w.user_id)}</div>
+                              </TableCell>
                               <TableCell className="font-bold text-yellow-400">{formatCurrency(w.amount)}</TableCell>
                               <TableCell className="text-sm">{w.bank_name}</TableCell>
+                              <TableCell className="text-sm">{w.account_name}</TableCell>
                               <TableCell className="font-mono text-xs">{w.account_number}</TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={`text-xs ${cfg.className}`}>{cfg.label}</Badge>
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground">{fmt(w.created_at)}</TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2 text-xs gap-1 border-green-500/40 text-green-400 hover:bg-green-500/10 hover:text-green-300"
+                                    onClick={() => updateWithdrawalStatus(w.id, 'success')}
+                                    disabled={isBusy}
+                                    title="Mark as paid — confirms the transfer was sent"
+                                  >
+                                    {isPaidBusy ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <BadgeCheck className="w-3 h-3" />
+                                    )}
+                                    Mark Paid
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2 text-xs gap-1 border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                                    onClick={() => updateWithdrawalStatus(w.id, 'failed')}
+                                    disabled={isBusy}
+                                    title="Mark as failed — refunds the amount to user's balance"
+                                  >
+                                    {isFailBusy ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Ban className="w-3 h-3" />
+                                    )}
+                                    Mark Failed
+                                  </Button>
+                                </div>
+                              </TableCell>
                             </TableRow>
                           );
                         })}

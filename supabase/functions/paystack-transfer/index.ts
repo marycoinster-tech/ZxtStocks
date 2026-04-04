@@ -619,6 +619,119 @@ serve(async (req: Request) => {
       );
     }
 
+    // ── Update Withdrawal Status (Admin) ───────────────────────────────────
+    if (action === 'update_withdrawal_status') {
+      const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com'];
+
+      // Verify caller via JWT
+      const authHeader = req.headers.get('Authorization');
+      const token = authHeader?.replace('Bearer ', '');
+      if (!token) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const supabaseUser = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
+      );
+
+      const { data: { user: caller }, error: callerErr } = await supabaseUser.auth.getUser(token);
+      if (callerErr || !caller || !ADMIN_EMAILS.includes(caller.email ?? '')) {
+        return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { withdrawal_id, new_status } = body;
+
+      if (!withdrawal_id || !['success', 'failed'].includes(new_status)) {
+        return new Response(
+          JSON.stringify({ error: 'withdrawal_id and new_status (success|failed) are required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Fetch withdrawal to get amount/user_id and current status
+      const { data: withdrawal, error: fetchErr } = await supabaseAdmin
+        .from('withdrawals')
+        .select('id, user_id, amount, status')
+        .eq('id', withdrawal_id)
+        .maybeSingle();
+
+      if (fetchErr || !withdrawal) {
+        return new Response(
+          JSON.stringify({ error: 'Withdrawal not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (withdrawal.status === 'success' || withdrawal.status === 'failed') {
+        return new Response(
+          JSON.stringify({ error: `Withdrawal already marked as ${withdrawal.status}` }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Update the withdrawal status
+      const { error: updateErr } = await supabaseAdmin
+        .from('withdrawals')
+        .update({ status: new_status, failure_reason: new_status === 'failed' ? 'Marked failed by admin' : null })
+        .eq('id', withdrawal_id);
+
+      if (updateErr) {
+        console.error('Failed to update withdrawal status:', updateErr);
+        throw new Error('Failed to update withdrawal status');
+      }
+
+      // If marking as failed, refund the amount back to the user's balance
+      if (new_status === 'failed') {
+        const { data: balData } = await supabaseAdmin
+          .from('mining_balances')
+          .select('available_balance, total_withdrawn')
+          .eq('user_id', withdrawal.user_id)
+          .maybeSingle();
+
+        if (balData) {
+          await supabaseAdmin
+            .from('mining_balances')
+            .update({
+              available_balance: balData.available_balance + withdrawal.amount,
+              total_withdrawn: Math.max(0, balData.total_withdrawn - withdrawal.amount),
+            })
+            .eq('user_id', withdrawal.user_id);
+
+          console.log(`Refunded ₦${withdrawal.amount} to user ${withdrawal.user_id} after failed withdrawal`);
+        }
+
+        // Update corresponding transaction to failed
+        await supabaseAdmin
+          .from('transactions')
+          .update({ status: 'failed' })
+          .eq('user_id', withdrawal.user_id)
+          .eq('type', 'withdrawal')
+          .eq('amount', withdrawal.amount);
+      } else {
+        // Mark corresponding transaction as completed
+        await supabaseAdmin
+          .from('transactions')
+          .update({ status: 'completed' })
+          .eq('user_id', withdrawal.user_id)
+          .eq('type', 'withdrawal')
+          .eq('amount', withdrawal.amount)
+          .eq('status', 'pending');
+      }
+
+      console.log(`Admin ${caller.email} marked withdrawal ${withdrawal_id} as ${new_status}`);
+
+      return new Response(
+        JSON.stringify({ message: `Withdrawal marked as ${new_status}`, refunded: new_status === 'failed' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Unknown action
     return new Response(
       JSON.stringify({ error: `Unknown action: ${action}` }),
