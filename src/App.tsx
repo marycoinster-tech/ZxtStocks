@@ -14,6 +14,8 @@ import PlansPage from '@/pages/PlansPage';
 import HowItWorksPage from '@/pages/HowItWorksPage';
 import WithdrawalPage from '@/pages/WithdrawalPage';
 import AdminPage from '@/pages/AdminPage';
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
+import ResetPasswordPage from '@/pages/ResetPasswordPage';
 import NotFound from '@/pages/NotFound';
 
 function App() {
@@ -61,6 +63,8 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

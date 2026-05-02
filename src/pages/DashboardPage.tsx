@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { TrendingUp, Wallet, Zap, Users, ArrowUpRight, CheckCircle2, ListChecks, Loader2, Lock } from 'lucide-react';
+import { TrendingUp, Wallet, Zap, Users, ArrowUpRight, CheckCircle2, ListChecks, Loader2, Lock, Coins, X, Info, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { formatCurrency, calculateMiningProgress, getDaysRemaining } from '@/lib/utils';
 import { MINING_PLANS } from '@/constants/plans';
@@ -133,6 +133,25 @@ export default function DashboardPage() {
   } | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(true);
 
+  // Daily mining claim state
+  const [claimingDaily, setClaimingDaily] = useState(false);
+  const [todayAlreadyClaimed, setTodayAlreadyClaimed] = useState(false);
+
+  // Platform notices
+  const [notices, setNotices] = useState<{ id: string; message: string; type: string }[]>([]);
+  const [dismissedNotices, setDismissedNotices] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('dismissed_notices') || '[]')); }
+    catch { return new Set(); }
+  });
+
+  useEffect(() => {
+    const fetchNotices = async () => {
+      const { data } = await supabase.from('notices').select('id, message, type').eq('is_active', true);
+      if (data) setNotices(data);
+    };
+    fetchNotices();
+  }, []);
+
   useEffect(() => {
     if (!user && !authUser) {
       navigate('/plans');
@@ -162,10 +181,14 @@ export default function DashboardPage() {
       if (!authUser) { setLoadingBalance(false); return; }
       const { data, error } = await supabase
         .from('mining_balances')
-        .select('available_balance, total_earned, total_withdrawn')
+        .select('available_balance, total_earned, total_withdrawn, last_claimed_at')
         .eq('user_id', authUser.id)
         .maybeSingle();
-      if (!error && data) setDbBalance(data);
+      if (!error && data) {
+        setDbBalance(data);
+        const todayUTC = new Date().toISOString().slice(0, 10);
+        setTodayAlreadyClaimed((data as any).last_claimed_at === todayUTC);
+      }
       setLoadingBalance(false);
     };
     fetchBalance();
@@ -184,6 +207,40 @@ export default function DashboardPage() {
     };
     fetchTasks();
   }, [authUser]);
+
+  const handleClaimDaily = async () => {
+    if (!authUser || !session?.planId) return;
+    setClaimingDaily(true);
+    try {
+      const result = await callEdgeFunction('credit_daily_mining', {
+        user_id: authUser.id,
+        plan_id: session.planId,
+      });
+      setTodayAlreadyClaimed(true);
+      setDbBalance((prev) => prev ? {
+        ...prev,
+        available_balance: result.new_balance,
+        total_earned: prev.total_earned + result.amount_credited,
+      } : prev);
+      toast.success(`+${formatCurrency(result.amount_credited)} mining credit added to your balance!`);
+    } catch (error: any) {
+      const msg: string = error.message || 'Failed to claim';
+      if (msg.includes('Already claimed')) {
+        setTodayAlreadyClaimed(true);
+        toast.info("You've already claimed today's earnings. Come back tomorrow!");
+      } else {
+        toast.error(msg);
+      }
+    } finally {
+      setClaimingDaily(false);
+    }
+  };
+
+  const dismissNotice = (id: string) => {
+    const next = new Set([...dismissedNotices, id]);
+    setDismissedNotices(next);
+    localStorage.setItem('dismissed_notices', JSON.stringify([...next]));
+  };
 
   const handleClaimTask = async (task: { key: string; title: string; description: string; bonus: number }) => {
     if (!authUser) return;
@@ -266,6 +323,31 @@ export default function DashboardPage() {
     <div className="min-h-screen py-12">
       <div className="container mx-auto px-4">
         <div className="max-w-7xl mx-auto space-y-8">
+
+          {/* Platform Notices Banner */}
+          {notices.filter((n) => !dismissedNotices.has(n.id)).map((notice) => {
+            const cfgMap: Record<string, { bg: string; border: string; text: string; Icon: React.ElementType }> = {
+              info:    { bg: 'bg-blue-500/10',   border: 'border-blue-500/30',   text: 'text-blue-300',   Icon: Info },
+              warning: { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-300', Icon: AlertTriangle },
+              success: { bg: 'bg-green-500/10',  border: 'border-green-500/30',  text: 'text-green-300',  Icon: CheckCircle },
+              error:   { bg: 'bg-red-500/10',    border: 'border-red-500/30',    text: 'text-red-300',    Icon: XCircle },
+            };
+            const cfg = cfgMap[notice.type] ?? cfgMap.info;
+            return (
+              <div key={notice.id} className={`flex items-start gap-3 rounded-xl border px-4 py-3 ${cfg.bg} ${cfg.border}`}>
+                <cfg.Icon className={`w-5 h-5 shrink-0 mt-0.5 ${cfg.text}`} />
+                <p className={`flex-1 text-sm font-medium leading-relaxed ${cfg.text}`}>{notice.message}</p>
+                <button
+                  onClick={() => dismissNotice(notice.id)}
+                  className={`shrink-0 ${cfg.text} opacity-70 hover:opacity-100 transition-opacity`}
+                  aria-label="Dismiss notice"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            );
+          })}
+
           {/* Header */}
           <div>
             <h1 className="text-4xl font-bold mb-2">Welcome back, {displayName}!</h1>
@@ -328,6 +410,40 @@ export default function DashboardPage() {
                       <div className={`text-xl font-bold mt-1 ${item.color}`}>{item.value}</div>
                     </div>
                   ))}
+                </div>
+
+                {/* Daily Claim Button */}
+                <div className={`flex items-center justify-between rounded-xl border p-4 ${
+                  todayAlreadyClaimed
+                    ? 'bg-green-500/5 border-green-500/20'
+                    : 'bg-primary/5 border-primary/20'
+                }`}>
+                  <div>
+                    <div className="font-semibold text-sm flex items-center gap-2">
+                      <Coins className="w-4 h-4 text-primary" />
+                      Today's Mining Earnings
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {todayAlreadyClaimed
+                        ? 'Claimed — come back tomorrow for your next credit'
+                        : `Click to claim your ${formatCurrency(plan.dailyReturn)} for today`}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={todayAlreadyClaimed ? 'outline' : 'default'}
+                    onClick={handleClaimDaily}
+                    disabled={claimingDaily || todayAlreadyClaimed}
+                    className="shrink-0 min-w-[130px]"
+                  >
+                    {claimingDaily ? (
+                      <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />Claiming…</>
+                    ) : todayAlreadyClaimed ? (
+                      <><CheckCircle2 className="w-3.5 h-3.5 mr-2 text-green-500" />Claimed</>
+                    ) : (
+                      <><Coins className="w-3.5 h-3.5 mr-2" />Claim {formatCurrency(plan.dailyReturn)}</>
+                    )}
+                  </Button>
                 </div>
 
                 <div className="flex gap-4">

@@ -31,6 +31,10 @@ import {
   Activity,
   BadgeCheck,
   Ban,
+  Megaphone,
+  Send,
+  X,
+  Trash2,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -137,6 +141,14 @@ export default function AdminPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [updatingWithdrawal, setUpdatingWithdrawal] = useState<string | null>(null);
 
+  // Broadcast notice state
+  const [noticeMessage, setNoticeMessage] = useState('');
+  const [noticeType, setNoticeType] = useState<'info' | 'warning' | 'success' | 'error'>('info');
+  const [activeNotice, setActiveNotice] = useState<{ id: string; message: string; type: string; created_at: string } | null>(null);
+  const [sendingNotice, setSendingNotice] = useState(false);
+  const [deactivatingNotice, setDeactivatingNotice] = useState(false);
+  const [loadingNotice, setLoadingNotice] = useState(false);
+
   // Search
   const [userSearch, setUserSearch] = useState('');
   const [txSearch, setTxSearch] = useState('');
@@ -185,6 +197,59 @@ export default function AdminPage() {
     }
   };
 
+  const fetchActiveNotice = useCallback(async () => {
+    setLoadingNotice(true);
+    const { data } = await supabase
+      .from('notices')
+      .select('id, message, type, created_at')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setActiveNotice(data ?? null);
+    setLoadingNotice(false);
+  }, []);
+
+  const handleSendNotice = async () => {
+    if (!noticeMessage.trim()) return;
+    setSendingNotice(true);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const { data, error } = await supabase.functions.invoke('paystack-transfer', {
+      body: { action: 'manage_notice', sub_action: 'create', message: noticeMessage.trim(), type: noticeType },
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (error) {
+      let msg = error.message;
+      if (error instanceof FunctionsHttpError) { try { msg = await error.context?.text() || msg; } catch { /* noop */ } }
+      toast.error('Failed to publish: ' + msg);
+    } else {
+      toast.success('Notice published to all users!');
+      setNoticeMessage('');
+      setActiveNotice(data.notice);
+    }
+    setSendingNotice(false);
+  };
+
+  const handleDeactivateNotice = async () => {
+    setDeactivatingNotice(true);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const { error } = await supabase.functions.invoke('paystack-transfer', {
+      body: { action: 'manage_notice', sub_action: 'deactivate' },
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (error) {
+      let msg = error.message;
+      if (error instanceof FunctionsHttpError) { try { msg = await error.context?.text() || msg; } catch { /* noop */ } }
+      toast.error('Failed to deactivate: ' + msg);
+    } else {
+      toast.success('Notice removed.');
+      setActiveNotice(null);
+    }
+    setDeactivatingNotice(false);
+  };
+
   const fetchAdminData = useCallback(async () => {
     setLoading(true);
     try {
@@ -219,8 +284,11 @@ export default function AdminPage() {
 
   // Auto-load data after PIN verified
   useEffect(() => {
-    if (pinVerified && isAdmin) fetchAdminData();
-  }, [pinVerified, isAdmin, fetchAdminData]);
+    if (pinVerified && isAdmin) {
+      fetchAdminData();
+      fetchActiveNotice();
+    }
+  }, [pinVerified, isAdmin, fetchAdminData, fetchActiveNotice]);
 
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -336,7 +404,7 @@ export default function AdminPage() {
               Zxt Stocks — Platform Management · <span className="text-primary font-mono">{authUser.email}</span>
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchAdminData} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => { fetchAdminData(); fetchActiveNotice(); }} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -460,6 +528,98 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Broadcast Notice Panel */}
+            <Card className="mb-8 border-primary/30">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Megaphone className="w-4 h-4 text-primary" />
+                  Broadcast Message
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Send a platform-wide notice displayed as a banner on every user's dashboard. Only one active notice at a time.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Active notice preview */}
+                {loadingNotice ? (
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading active notice…
+                  </div>
+                ) : activeNotice ? (
+                  <div className="flex items-start justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+                    <div className="flex-1">
+                      <div className="text-xs text-muted-foreground mb-1">
+                        Active notice · {new Date(activeNotice.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      <p className="text-sm font-medium">{activeNotice.message}</p>
+                      <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                        activeNotice.type === 'warning' ? 'bg-yellow-500/20 text-yellow-400' :
+                        activeNotice.type === 'success' ? 'bg-green-500/20 text-green-400' :
+                        activeNotice.type === 'error'   ? 'bg-red-500/20 text-red-400' :
+                        'bg-blue-500/20 text-blue-400'
+                      }`}>{activeNotice.type}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                      onClick={handleDeactivateNotice}
+                      disabled={deactivatingNotice}
+                      title="Remove notice"
+                    >
+                      {deactivatingNotice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground py-1">
+                    No active notice. Compose one below to broadcast to all users.
+                  </div>
+                )}
+
+                {/* Compose new notice */}
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    {(['info', 'warning', 'success', 'error'] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setNoticeType(t)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                          noticeType === t
+                            ? t === 'warning' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' :
+                              t === 'success' ? 'bg-green-500/20 text-green-400 border-green-500/40' :
+                              t === 'error'   ? 'bg-red-500/20 text-red-400 border-red-500/40' :
+                                               'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                            : 'border-border text-muted-foreground hover:border-primary/40'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Type your broadcast message here…"
+                      value={noticeMessage}
+                      onChange={(e) => setNoticeMessage(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendNotice(); } }}
+                      className="flex-1 text-sm"
+                      maxLength={280}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleSendNotice}
+                      disabled={sendingNotice || !noticeMessage.trim()}
+                      className="shrink-0"
+                    >
+                      {sendingNotice ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}
+                      {sendingNotice ? '' : 'Publish'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{noticeMessage.length}/280 chars · Publishes instantly and replaces any existing notice</p>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Tabs */}
             <Tabs defaultValue="users">

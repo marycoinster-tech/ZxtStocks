@@ -619,6 +619,179 @@ serve(async (req: Request) => {
       );
     }
 
+    // ── Credit Daily Mining ──────────────────────────────────────────────────
+    if (action === 'credit_daily_mining') {
+      const { user_id, plan_id } = body;
+
+      if (!user_id || !plan_id) {
+        return new Response(
+          JSON.stringify({ error: 'user_id and plan_id are required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Daily return map matching MINING_PLANS constants
+      const DAILY_RETURNS: Record<string, number> = {
+        starter: 500,
+        professional: 1500,
+        elite: 4000,
+        enterprise: 10000,
+      };
+
+      const dailyReturn = DAILY_RETURNS[plan_id];
+      if (!dailyReturn) {
+        return new Response(
+          JSON.stringify({ error: `Unknown plan_id: ${plan_id}` }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Check if already claimed today (UTC date)
+      const todayUTC = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+      const { data: balData } = await supabaseAdmin
+        .from('mining_balances')
+        .select('id, available_balance, total_earned, total_withdrawn, last_claimed_at, plan_id')
+        .eq('user_id', user_id)
+        .maybeSingle();
+
+      if (balData?.last_claimed_at === todayUTC) {
+        return new Response(
+          JSON.stringify({ error: 'Already claimed today. Come back tomorrow!' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const newAvailable = (balData?.available_balance ?? 0) + dailyReturn;
+      const newTotalEarned = (balData?.total_earned ?? 0) + dailyReturn;
+
+      if (balData) {
+        await supabaseAdmin
+          .from('mining_balances')
+          .update({
+            available_balance: newAvailable,
+            total_earned: newTotalEarned,
+            last_claimed_at: todayUTC,
+            plan_id,
+          })
+          .eq('user_id', user_id);
+      } else {
+        await supabaseAdmin
+          .from('mining_balances')
+          .insert({
+            user_id,
+            available_balance: dailyReturn,
+            total_earned: dailyReturn,
+            total_withdrawn: 0,
+            last_claimed_at: todayUTC,
+            plan_id,
+          });
+      }
+
+      // Log as a mining_credit transaction
+      await supabaseAdmin
+        .from('transactions')
+        .insert({
+          user_id,
+          type: 'mining_credit',
+          amount: dailyReturn,
+          currency: 'NGN',
+          status: 'completed',
+          description: `Daily mining credit — ${plan_id} plan`,
+          plan_id,
+        });
+
+      console.log(`Daily mining credit ₦${dailyReturn} credited to user ${user_id} for plan ${plan_id}`);
+
+      return new Response(
+        JSON.stringify({
+          message: 'Daily mining credit claimed!',
+          amount_credited: dailyReturn,
+          new_balance: newAvailable,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ── Manage Notice (Admin) ──────────────────────────────────────────────────
+    if (action === 'manage_notice') {
+      const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com', 'iandanger121@gmail.com'];
+
+      const authHeader = req.headers.get('Authorization');
+      const token = authHeader?.replace('Bearer ', '');
+      if (!token) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const supabaseUser = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
+      );
+
+      const { data: { user: caller }, error: callerErr } = await supabaseUser.auth.getUser(token);
+      if (callerErr || !caller || !ADMIN_EMAILS.includes(caller.email ?? '')) {
+        return new Response(JSON.stringify({ error: 'Forbidden: admin only' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { sub_action, message, type: noticeType, notice_id } = body;
+
+      // POST — create a new notice (deactivates all existing ones first)
+      if (sub_action === 'create') {
+        if (!message?.trim()) {
+          return new Response(
+            JSON.stringify({ error: 'message is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        // Deactivate all existing notices
+        await supabaseAdmin.from('notices').update({ is_active: false }).eq('is_active', true);
+
+        const { data: newNotice, error: insertErr } = await supabaseAdmin
+          .from('notices')
+          .insert({
+            message: message.trim(),
+            type: noticeType || 'info',
+            is_active: true,
+            created_by: caller.email ?? 'admin',
+          })
+          .select()
+          .single();
+
+        if (insertErr) throw new Error('Failed to create notice: ' + insertErr.message);
+
+        console.log(`Admin ${caller.email} created notice: ${message.slice(0, 60)}`);
+        return new Response(
+          JSON.stringify({ message: 'Notice published', notice: newNotice }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // DELETE — deactivate a notice
+      if (sub_action === 'deactivate') {
+        const filter = notice_id
+          ? supabaseAdmin.from('notices').update({ is_active: false }).eq('id', notice_id)
+          : supabaseAdmin.from('notices').update({ is_active: false }).eq('is_active', true);
+
+        const { error: deactivateErr } = await filter;
+        if (deactivateErr) throw new Error('Failed to deactivate notice: ' + deactivateErr.message);
+
+        return new Response(
+          JSON.stringify({ message: 'Notice deactivated' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ error: 'Unknown sub_action. Use create or deactivate.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // ── Update Withdrawal Status (Admin) ───────────────────────────────────
     if (action === 'update_withdrawal_status') {
       const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com', 'iandanger121@gmail.com'];
