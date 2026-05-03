@@ -125,7 +125,7 @@ function shortId(id: string) {
 // ── Component ────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const navigate = useNavigate();
-  const { user: authUser } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
 
   // Gate state
   const [pinInput, setPinInput] = useState('');
@@ -154,14 +154,6 @@ export default function AdminPage() {
   const [txSearch, setTxSearch] = useState('');
 
   const isAdmin = authUser && ADMIN_EMAILS.includes(authUser.email);
-
-  // Redirect non-logged-in users
-  useEffect(() => {
-    if (authUser === null) {
-      // authUser is null (not loading), redirect
-      navigate('/login');
-    }
-  }, [authUser, navigate]);
 
   const updateWithdrawalStatus = async (withdrawalId: string, newStatus: 'success' | 'failed') => {
     setUpdatingWithdrawal(withdrawalId + newStatus);
@@ -317,8 +309,38 @@ export default function AdminPage() {
 
   const pendingWithdrawals = withdrawals.filter((w) => w.status === 'pending' || w.status === 'processing');
 
+  // ── Gate: auth still loading ──────────────────────────────────────────────
+  const { loading: authLoading } = useAuth();
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
+          <p className="text-muted-foreground text-sm">Verifying session…</p>
+        </div>
+      </div>
+    );
+  }
+
   // ── Gate: not authenticated ───────────────────────────────────────────────
-  if (!authUser) return null;
+  if (!authUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <Card className="w-full max-w-md border-destructive/40">
+          <CardContent className="py-12 text-center space-y-4">
+            <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto">
+              <Lock className="w-8 h-8 text-destructive" />
+            </div>
+            <h2 className="text-2xl font-bold">Sign In Required</h2>
+            <p className="text-muted-foreground text-sm">
+              You must be logged in with an admin account to access this page.
+            </p>
+            <Button onClick={() => navigate('/login')}>Go to Login</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // ── Gate: not an admin email ─────────────────────────────────────────────
   if (!isAdmin) {

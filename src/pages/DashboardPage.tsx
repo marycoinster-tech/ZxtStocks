@@ -354,6 +354,43 @@ export default function DashboardPage() {
             <p className="text-muted-foreground">Here's your mining overview</p>
           </div>
 
+          {/* Unclaimed Earnings CTA Banner */}
+          {plan && session && !todayAlreadyClaimed && !claimingDaily && (
+            <div className="relative overflow-hidden rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/15 via-primary/10 to-secondary/15 px-5 py-4">
+              {/* Pulsing glow ring */}
+              <span className="absolute inset-0 rounded-2xl ring-2 ring-primary/30 animate-pulse pointer-events-none" />
+              <div className="flex items-center gap-4">
+                {/* Animated coin icon */}
+                <div className="relative shrink-0">
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center animate-bounce">
+                    <Coins className="w-6 h-6 text-primary" />
+                  </div>
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-yellow-400 border-2 border-background animate-ping" />
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-yellow-400 border-2 border-background" />
+                </div>
+                {/* Text */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-base leading-tight">
+                    You have unclaimed earnings!
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    <span className="font-semibold text-primary">{formatCurrency(plan.dailyReturn)}</span> is waiting — claim your daily mining credit now before midnight UTC
+                  </p>
+                </div>
+                {/* CTA */}
+                <Button
+                  size="sm"
+                  className="shrink-0 min-w-[140px] animate-pulse shadow-lg shadow-primary/30"
+                  onClick={handleClaimDaily}
+                  disabled={claimingDaily}
+                >
+                  <Coins className="w-4 h-4 mr-2" />
+                  Claim {formatCurrency(plan.dailyReturn)}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {stats.map((stat, index) => (
