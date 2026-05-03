@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Cpu, Menu, X, User, LogOut } from 'lucide-react';
+import { Cpu, Menu, X, User, LogOut, Shield } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { authService } from '@/lib/auth-service';
@@ -17,6 +17,8 @@ import { toast } from 'sonner';
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const { user, logout } = useAuth();
+  const ADMIN_EMAILS = ['admin@zxtstocks.com', 'support@zxtstocks.com', 'iandanger121@gmail.com'];
+  const isAdmin = user && ADMIN_EMAILS.includes(user.email);
 
   const handleLogout = async () => {
     try {
@@ -61,6 +63,15 @@ export default function Navbar() {
             <Link to="/plans" className="text-sm font-medium hover:text-primary transition-colors">
               Plans
             </Link>
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="flex items-center gap-1.5 text-sm font-semibold text-yellow-400 hover:text-yellow-300 transition-colors border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 rounded-full"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                Admin
+              </Link>
+            )}
           </div>
 
           {/* Desktop Auth */}
@@ -93,6 +104,17 @@ export default function Navbar() {
                   <DropdownMenuItem asChild>
                     <Link to="/referrals">Referrals</Link>
                   </DropdownMenuItem>
+                  {isAdmin && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link to="/admin" className="flex items-center gap-2 text-yellow-400 font-semibold">
+                          <Shield className="w-4 h-4" />
+                          Admin Panel
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="text-destructive">
                     <LogOut className="w-4 h-4 mr-2" />
@@ -168,6 +190,16 @@ export default function Navbar() {
               >
                 Plans
               </Link>
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  className="flex items-center gap-2 text-sm font-semibold text-yellow-400 border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 rounded-lg"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <Shield className="w-4 h-4" />
+                  Admin Panel
+                </Link>
+              )}
               {user ? (
                 <>
                   <div className="pt-2 border-t border-border">

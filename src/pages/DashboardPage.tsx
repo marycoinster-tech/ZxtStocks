@@ -211,12 +211,13 @@ export default function DashboardPage() {
   const handleClaimDaily = async () => {
     if (!authUser || !session?.planId) return;
     setClaimingDaily(true);
+    // Optimistic dismiss — banner disappears immediately on click
+    setTodayAlreadyClaimed(true);
     try {
       const result = await callEdgeFunction('credit_daily_mining', {
         user_id: authUser.id,
         plan_id: session.planId,
       });
-      setTodayAlreadyClaimed(true);
       setDbBalance((prev) => prev ? {
         ...prev,
         available_balance: result.new_balance,
@@ -226,9 +227,11 @@ export default function DashboardPage() {
     } catch (error: any) {
       const msg: string = error.message || 'Failed to claim';
       if (msg.includes('Already claimed')) {
-        setTodayAlreadyClaimed(true);
+        // todayAlreadyClaimed already set to true — nothing to restore
         toast.info("You've already claimed today's earnings. Come back tomorrow!");
       } else {
+        // Restore banner so user can retry
+        setTodayAlreadyClaimed(false);
         toast.error(msg);
       }
     } finally {
