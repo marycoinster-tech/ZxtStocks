@@ -310,7 +310,6 @@ export default function AdminPage() {
   const pendingWithdrawals = withdrawals.filter((w) => w.status === 'pending' || w.status === 'processing');
 
   // ── Gate: auth still loading ──────────────────────────────────────────────
-  const { loading: authLoading } = useAuth();
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
